@@ -10,7 +10,7 @@ const [command, ...rest] = parsed.getLoose();
 async function main() {
   switch (command) {
     case "ls":
-      return runLs(parseAddress(rest[0] ?? "."), parsed.get("sort"));
+      return runLs(parseAddress(rest[0] ?? "."), parsed.get("sort"), parsed.get("filter"));
 
     case "rename":
       if (!rest[0] || !rest[1])

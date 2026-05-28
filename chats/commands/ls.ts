@@ -1,5 +1,9 @@
 import { cwd } from "node:process";
 import type { Address } from "../identifiers/types.ts";
+import type {
+  ClaudeCodeChat,
+  ClaudeCodeMessage,
+} from "../platforms/claudeCode.ts";
 import {
   findProjectDir,
   listAllProjects,
@@ -8,35 +12,108 @@ import {
   resolveChat,
   resolveMessage,
 } from "../platforms/claudeCode.ts";
+import { type Col, filterRows, printTable } from "../tui/table.ts";
 
 function shortId(uuid: string) {
   return uuid.slice(0, 8);
 }
 
-function shortDate(ts?: string) {
-  return ts ? ts.slice(0, 10) : "          ";
+function formatDate(ts?: string) {
+  if (!ts) return "";
+  const date = new Date(ts);
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const opts: Intl.DateTimeFormatOptions = {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+    timeZone: tz,
+  };
+  const parts = new Intl.DateTimeFormat("en-CA", opts).formatToParts(date);
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "";
+  return `${get("year")}-${get("month")}-${get("day")} ${get("hour")}:${get("minute")}:${get("second")}`;
 }
 
-function contentPreview(msg: {
-  message?: { role: string; content: unknown };
-}): string {
-  const content = msg.message?.content;
+function contentPreview(message: ClaudeCodeMessage): string {
+  const content = message.message?.content;
   if (!content) return "";
-  const text = typeof content === "string" ? content : JSON.stringify(content);
-  return text.replace(/\s+/g, " ").slice(0, 80);
+  let text: string;
+  if (typeof content === "string") {
+    text = content.replace(/\n/g, "  ");
+  } else if (Array.isArray(content) && content.every((item: Record<string, unknown>) => item["type"] === "text" || item["type"] === "thinking")) {
+    text = content.map((item: Record<string, unknown>) => String(item["text"] ?? item["thinking"] ?? "")).join("  ").replace(/\n/g, "  ");
+  } else {
+    const stripped = Array.isArray(content)
+      ? content.map((item: Record<string, unknown>) =>
+          Object.fromEntries(Object.entries(item).filter((e) => e[0] !== "type")),
+        )
+      : content;
+    text = JSON.stringify(stripped);
+  }
+  return text;
 }
 
-export async function runLs(addr: Address, sortCol?: string): Promise<void> {
+function firstTs(c: ClaudeCodeChat) {
+  return c.messages.find((m) => m.timestamp)?.timestamp ?? "";
+}
+
+function lastTs(c: ClaudeCodeChat) {
+  return c.messages.findLast((m) => m.timestamp)?.timestamp ?? "";
+}
+
+const chatCols: Col<ClaudeCodeChat>[] = [
+  { name: "id", value: (c) => c.id, format: (c) => shortId(c.id) },
+  { name: "created", value: firstTs, format: (c) => formatDate(firstTs(c)) },
+  { name: "modified", value: lastTs, format: (c) => formatDate(lastTs(c)) },
+  {
+    name: "title",
+    value: (c) => c.title ?? "",
+    format: (c) => c.title ?? "(untitled)",
+  },
+];
+
+function contentType(message: ClaudeCodeMessage): string {
+  const content = message.message?.content;
+  if (!content) return "";
+  if (typeof content === "string") return "text";
+  if (!Array.isArray(content)) return "";
+  const types = [...new Set(content.map((item: Record<string, unknown>) => String(item["type"] ?? "")))];
+  return types.join("+");
+}
+
+const messageCols: Col<ClaudeCodeMessage>[] = [
+  { name: "id", value: (m) => m.uuid, format: (m) => shortId(m.uuid) },
+  {
+    name: "date",
+    value: (m) => m.timestamp ?? "",
+    format: (m) => formatDate(m.timestamp),
+  },
+  { name: "sender", value: (m) => m.type },
+  { name: "type", value: (m) => contentType(m) },
+  { name: "content", value: (m) => contentPreview(m) },
+];
+
+export async function runLs(addr: Address, sortCol?: string, filterStr?: string): Promise<void> {
   // ls / — list all projects
   if (addr.projectPath === "/") {
-    console.log(
-      "project                                                           chats",
-    );
     const projects = await listAllProjects();
-    for (const { dir, encoded } of projects) {
-      const chats = await listChats(dir);
-      console.log(`${encoded.padEnd(67)}  ${chats.length}`);
-    }
+    const rows = await Promise.all(
+      projects.map(async (project) => ({
+        encoded: project.encoded,
+        count: (await listChats(project.dir)).length,
+      })),
+    );
+    printTable(
+      rows,
+      [
+        { name: "project", value: (r) => r.encoded },
+        { name: "chats", value: (r) => String(r.count) },
+      ],
+      sortCol,
+    );
     return;
   }
 
@@ -61,50 +138,26 @@ export async function runLs(addr: Address, sortCol?: string): Promise<void> {
     const chat = await loadChat(filePath);
 
     if (addr.messageId) {
-      const msg = resolveMessage(chat.messages, addr.messageId);
-      console.log(JSON.stringify(msg, null, 2));
+      console.log(
+        JSON.stringify(resolveMessage(chat.messages, addr.messageId), null, 2),
+      );
       return;
     }
 
-    console.log(`# ${chat.title ?? "(untitled)"}  ${shortId(chat.id)}\n`);
-    console.log("id        date        type       content");
-    let messages = chat.messages.filter((m) =>
-      ["user", "assistant"].includes(m.type),
-    );
-    if (sortCol === "date")
-      messages = messages.sort((a, b) =>
-        (a.timestamp ?? "").localeCompare(b.timestamp ?? ""),
-      );
-    else if (sortCol === "type")
-      messages = messages.sort((a, b) => a.type.localeCompare(b.type));
-    else if (sortCol === "content")
-      messages = messages.sort((a, b) =>
-        contentPreview(a).localeCompare(contentPreview(b)),
-      );
-    for (const msg of messages) {
-      console.log(
-        `${shortId(msg.uuid)}  ${shortDate(msg.timestamp)}  ${msg.type.padEnd(9)}  ${contentPreview(msg)}`,
-      );
-    }
+    console.log(`${chat.title ?? "(untitled)"}  ${shortId(chat.id)}\n`);
+    const messages = chat.messages.filter((m) => m.uuid);
+    const filtered = filterStr ? filterRows(messages, messageCols, filterStr) : messages;
+    printTable(filtered, messageCols, sortCol);
     return;
   }
 
   // ls [project] — list chats in project
   if (!projectDir) throw new Error(`Project not found: ${projectPath}`);
-  let chats = await listChats(projectDir);
-  if (chats.length === 0) {
+  const chats = await listChats(projectDir);
+  const filtered = filterStr ? filterRows(chats, chatCols, filterStr) : chats;
+  if (filtered.length === 0) {
     console.log("(no chats)");
     return;
   }
-  if (sortCol === "title")
-    chats = chats.sort((a, b) => (a.title ?? "").localeCompare(b.title ?? ""));
-  else if (sortCol === "id")
-    chats = chats.sort((a, b) => a.id.localeCompare(b.id));
-  console.log("id        date        title");
-  for (const chat of chats) {
-    const lastMsg = chat.messages.findLast((m) => m.timestamp);
-    console.log(
-      `${shortId(chat.id)}  ${shortDate(lastMsg?.timestamp)}  ${chat.title ?? "(untitled)"}`,
-    );
-  }
+  printTable(filtered, chatCols, sortCol);
 }
