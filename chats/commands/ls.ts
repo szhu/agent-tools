@@ -1,16 +1,14 @@
 import { cwd } from "node:process";
-import type { Address } from "../identifiers/types.ts";
+import type { RawAddress } from "../identifiers/types.ts";
 import type {
   ClaudeCodeChat,
   ClaudeCodeMessage,
 } from "../platforms/claudeCode.ts";
 import {
-  findProjectDir,
   listAllProjects,
   listChats,
   loadChat,
-  resolveChat,
-  resolveMessage,
+  resolveAddress,
 } from "../platforms/claudeCode.ts";
 import { type Col, filterRows, printTable } from "../tui/table.ts";
 
@@ -43,17 +41,45 @@ function contentPreview(message: ClaudeCodeMessage): string {
   let text: string;
   if (typeof content === "string") {
     text = content.replace(/\n/g, "  ");
-  } else if (Array.isArray(content) && content.every((item: Record<string, unknown>) => item["type"] === "text" || item["type"] === "thinking")) {
-    text = content.map((item: Record<string, unknown>) => String(item["text"] ?? item["thinking"] ?? "")).join("  ").replace(/\n/g, "  ");
+  } else if (
+    Array.isArray(content) &&
+    content.every(
+      (item: Record<string, unknown>) =>
+        item["type"] === "text" || item["type"] === "thinking",
+    )
+  ) {
+    text = content
+      .map((item: Record<string, unknown>) =>
+        String(item["text"] ?? item["thinking"] ?? ""),
+      )
+      .join("  ")
+      .replace(/\n/g, "  ");
   } else {
     const stripped = Array.isArray(content)
       ? content.map((item: Record<string, unknown>) =>
-          Object.fromEntries(Object.entries(item).filter((e) => e[0] !== "type")),
+          Object.fromEntries(
+            Object.entries(item).filter((e) => e[0] !== "type"),
+          ),
         )
       : content;
     text = JSON.stringify(stripped);
   }
   return text;
+}
+
+function contentType(message: ClaudeCodeMessage): string {
+  const content = message.message?.content;
+  if (!content) return "";
+  if (typeof content === "string") return "text";
+  if (!Array.isArray(content)) return "";
+  const types = [
+    ...new Set(
+      content.map((item: Record<string, unknown>) =>
+        String(item["type"] ?? ""),
+      ),
+    ),
+  ];
+  return types.join("+");
 }
 
 function firstTs(c: ClaudeCodeChat) {
@@ -75,15 +101,6 @@ const chatCols: Col<ClaudeCodeChat>[] = [
   },
 ];
 
-function contentType(message: ClaudeCodeMessage): string {
-  const content = message.message?.content;
-  if (!content) return "";
-  if (typeof content === "string") return "text";
-  if (!Array.isArray(content)) return "";
-  const types = [...new Set(content.map((item: Record<string, unknown>) => String(item["type"] ?? "")))];
-  return types.join("+");
-}
-
 const messageCols: Col<ClaudeCodeMessage>[] = [
   { name: "id", value: (m) => m.uuid, format: (m) => shortId(m.uuid) },
   {
@@ -96,9 +113,14 @@ const messageCols: Col<ClaudeCodeMessage>[] = [
   { name: "content", value: (m) => contentPreview(m) },
 ];
 
-export async function runLs(addr: Address, sortCol?: string, filterStr?: string): Promise<void> {
-  // ls / — list all projects
-  if (addr.projectPath === "/") {
+export async function runLs(
+  raw: RawAddress,
+  sortCol?: string,
+  filterStr?: string,
+): Promise<void> {
+  const resolved = await resolveAddress(raw, cwd());
+
+  if (resolved.type === "all") {
     const projects = await listAllProjects();
     const rows = await Promise.all(
       projects.map(async (project) => ({
@@ -117,47 +139,28 @@ export async function runLs(addr: Address, sortCol?: string, filterStr?: string)
     return;
   }
 
-  // Resolve project dir
-  const projectPath = addr.projectPath ?? cwd();
-  const projectDir = addr.isJsonlPath
-    ? null
-    : await findProjectDir(projectPath === "." ? cwd() : projectPath);
-
-  // ls <chat-id>[/msg] — list messages or show one message
-  if (addr.chatId) {
-    const filePath = addr.isJsonlPath
-      ? (addr.projectPath ?? "")
-      : projectDir
-        ? await listChats(projectDir).then(
-            (cs) => resolveChat(cs, addr.chatId!).filePath,
-          )
-        : (() => {
-            throw new Error(`Project not found: ${projectPath}`);
-          })();
-
-    const chat = await loadChat(filePath);
-
-    if (addr.messageId) {
-      console.log(
-        JSON.stringify(resolveMessage(chat.messages, addr.messageId), null, 2),
-      );
+  if (resolved.type === "project") {
+    const chats = await listChats(resolved.jsonlDir);
+    const filtered = filterStr ? filterRows(chats, chatCols, filterStr) : chats;
+    if (filtered.length === 0) {
+      console.log("(no chats)");
       return;
     }
-
-    console.log(`${chat.title ?? "(untitled)"}  ${shortId(chat.id)}\n`);
-    const messages = chat.messages.filter((m) => m.uuid);
-    const filtered = filterStr ? filterRows(messages, messageCols, filterStr) : messages;
-    printTable(filtered, messageCols, sortCol);
+    printTable(filtered, chatCols, sortCol);
     return;
   }
 
-  // ls [project] — list chats in project
-  if (!projectDir) throw new Error(`Project not found: ${projectPath}`);
-  const chats = await listChats(projectDir);
-  const filtered = filterStr ? filterRows(chats, chatCols, filterStr) : chats;
-  if (filtered.length === 0) {
-    console.log("(no chats)");
+  if (resolved.type === "messages") {
+    const chat = await loadChat(resolved.jsonlPath);
+    const message = chat.messages.find((m) => m.uuid === resolved.messageId);
+    console.log(JSON.stringify(message, null, 2));
     return;
   }
-  printTable(filtered, chatCols, sortCol);
+
+  // resolved.type === "chat"
+  const chat = await loadChat(resolved.jsonlPath);
+  console.log(`${chat.title ?? "(untitled)"}  ${shortId(chat.id)}\n`);
+  const messages = chat.messages.filter((m) => m.uuid);
+  const filtered = filterStr ? filterRows(messages, messageCols, filterStr) : messages;
+  printTable(filtered, messageCols, sortCol);
 }

@@ -1,6 +1,8 @@
 import { readdir, readFile, rename, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { basename, join } from "node:path";
+import { basename, dirname, join } from "node:path";
+import { parseRange } from "../identifiers/parse.ts";
+import type { RawAddress, ResolvedAddress } from "../identifiers/types.ts";
 
 export type ClaudeCodeMessage = {
   uuid: string;
@@ -119,6 +121,82 @@ export async function appendTitle(
     filePath,
     (await readFile(filePath, "utf-8")) + JSON.stringify(entry) + "\n",
   );
+}
+
+export async function resolveAddress(
+  raw: RawAddress,
+  cwdPath: string,
+): Promise<ResolvedAddress> {
+  const pathInput = raw.pathInput ?? cwdPath;
+
+  if (pathInput === "/") return { type: "all" };
+
+  const isJsonl = pathInput.endsWith(".jsonl");
+  let projectPath: string;
+  let jsonlDir: string;
+  let jsonlPath: string | undefined;
+
+  if (isJsonl) {
+    projectPath = dirname(pathInput);
+    jsonlDir = projectPath;
+    jsonlPath = pathInput;
+  } else {
+    projectPath = pathInput === "." ? cwdPath : pathInput;
+    const dir = await findProjectDir(projectPath);
+    if (!dir) throw new Error(`Project not found: ${projectPath}`);
+    jsonlDir = dir;
+  }
+
+  if (!raw.chatInput && !isJsonl) {
+    return { type: "project", projectPath, jsonlDir };
+  }
+
+  if (!jsonlPath) {
+    const chats = await listChats(jsonlDir);
+    const chat = resolveChat(chats, raw.chatInput!);
+    jsonlPath = chat.filePath;
+  }
+
+  const chatId = basename(jsonlPath, ".jsonl");
+
+  if (!raw.messagesInput) {
+    return { type: "chat", projectPath, jsonlPath, chatId };
+  }
+
+  const chat = await loadChat(jsonlPath);
+  const range = parseRange(raw.messagesInput);
+
+  if (range) {
+    const startMessage = resolveMessage(chat.messages, range.start);
+    const endMessage = resolveMessage(chat.messages, range.end);
+    return {
+      type: "messages",
+      projectPath,
+      jsonlPath,
+      chatId,
+      messageIds: {
+        start: startMessage.uuid,
+        startInclusive: range.startInclusive,
+        end: endMessage.uuid,
+        endInclusive: range.endInclusive,
+      },
+    };
+  }
+
+  const message = resolveMessage(chat.messages, raw.messagesInput);
+  return {
+    type: "messages",
+    projectPath,
+    jsonlPath,
+    chatId,
+    messageId: message.uuid,
+    messageIds: {
+      start: message.uuid,
+      startInclusive: true,
+      end: message.uuid,
+      endInclusive: true,
+    },
+  };
 }
 
 export async function moveChatFile(
