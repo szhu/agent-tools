@@ -1,0 +1,17 @@
+{
+  "compilerOptions": {
+    "allowArbitraryExtensions": true,
+    "allowSyntheticDefaultImports": true,
+    "checkJs": true,
+    "incremental": true,
+    "module": "preserve",
+    "moduleResolution": "bundler",
+    "noEmit": true,
+    "noPropertyAccessFromIndexSignature": true,
+    "noUncheckedIndexedAccess": true,
+    "skipDefaultLibCheck": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "target": "esnext"
+  }
+}
