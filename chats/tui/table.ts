@@ -1,5 +1,4 @@
 import { env, stdout } from "node:process";
-import { table } from "@cross/utils/table";
 
 function terminalWidth(): number | undefined {
   if (stdout.columns) return stdout.columns;
@@ -66,13 +65,14 @@ export function printTable<T>(
     ...sorted.map((r) => cols.map((c) => (c.format ?? c.value)(r))),
   ];
 
+  const colWidths = cols.map((_, i) => Math.max(...grid.map((row) => (row[i] ?? "").length)));
+
   const width = terminalWidth();
   if (width !== undefined) {
-    // col widths = max cell length per column; columns separated by 4 spaces
-    const colWidths = cols.map((_, i) => Math.max(...grid.map((row) => (row[i] ?? "").length)));
     const fixedWidth = colWidths.slice(0, -1).reduce((sum, w) => sum + w + 4, 0);
-    const lastColMax = width - fixedWidth - 1;
+    const lastColMax = width - fixedWidth - 4;
     if (lastColMax < colWidths[colWidths.length - 1]!) {
+      colWidths[colWidths.length - 1] = lastColMax;
       const lastIndex = cols.length - 1;
       for (const row of grid) {
         if ((row[lastIndex]?.length ?? 0) > lastColMax) {
@@ -82,5 +82,9 @@ export function printTable<T>(
     }
   }
 
-  table(grid);
+  for (const row of grid) {
+    console.log(
+      row.map((cell, i) => (i < cols.length - 1 ? cell.padEnd(colWidths[i]! + 4) : cell)).join(""),
+    );
+  }
 }
