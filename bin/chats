@@ -1,0 +1,2 @@
+#!/usr/bin/env bash
+exec bun "$(dirname "$(realpath "$0")")/../chats/commands/main.ts" "$@"
