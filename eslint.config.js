@@ -46,6 +46,11 @@ export default [
             "Don't abbreviate: use 'i', 'index', 'pos', 'position', 'loc', or 'location' instead of 'idx'",
         },
         {
+          // Should match: ctx, getCtx
+          selector: "Identifier[name=/ctx/i]",
+          message: "Don't abbreviate: use 'context' instead of 'ctx'",
+        },
+        {
           // Should match: arr.map(({ id }) => id)
           selector:
             "ArrowFunctionExpression > ObjectPattern, FunctionExpression > ObjectPattern",
@@ -68,4 +73,12 @@ export default [
       ],
     },
   },
+  {
+    files: ["chats/platforms/claudeCode/identifiers/**/*.ts"],
+    rules: {
+      "no-restricted-imports": ["error", {
+        patterns: ["**/operations/**"]
+      }]
+    }
+  }
 ];

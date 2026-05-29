@@ -1,16 +1,11 @@
-import { cwd } from "node:process";
+import type { ClaudeCodeContext } from "../data/storage.ts";
+import type { ClaudeCodeChat, ClaudeCodeMessage } from "../data/types.ts";
 import type { RawAddress } from "../identifiers/types.ts";
-import type {
-  ClaudeCodeChat,
-  ClaudeCodeMessage,
-} from "../platforms/claudeCode.ts";
-import {
-  listAllProjects,
-  listChats,
-  loadChat,
-  resolveAddress,
-} from "../platforms/claudeCode.ts";
-import { type Col, filterRows, printTable } from "../tui/table.ts";
+import { resolveAddress } from "../identifiers/resolve.ts";
+import { listChats } from "../operations/listChats.ts";
+import { listMessages } from "../operations/listMessages.ts";
+import { listProjects } from "../operations/listProjects.ts";
+import { type Col, filterRows, printTable } from "../../../tui/table.ts";
 
 function shortId(uuid: string) {
   return uuid.slice(0, 8);
@@ -114,25 +109,21 @@ const messageCols: Col<ClaudeCodeMessage>[] = [
 ];
 
 export async function runLs(
+  context: ClaudeCodeContext,
   raw: RawAddress,
   sortCol?: string,
   filterStr?: string,
 ): Promise<void> {
-  const resolved = await resolveAddress(raw, cwd());
+  const { cwd } = await import("node:process");
+  const resolved = await resolveAddress(raw, cwd(), context);
 
   if (resolved.type === "all") {
-    const projects = await listAllProjects();
-    const rows = await Promise.all(
-      projects.map(async (project) => ({
-        encoded: project.encoded,
-        count: (await listChats(project.dir)).length,
-      })),
-    );
+    const projects = await listProjects(context);
     printTable(
-      rows,
+      projects,
       [
         { name: "project", value: (r) => r.encoded },
-        { name: "chats", value: (r) => String(r.count) },
+        { name: "chats", value: (r) => String(r.chatCount) },
       ],
       sortCol,
     );
@@ -140,7 +131,7 @@ export async function runLs(
   }
 
   if (resolved.type === "project") {
-    const chats = await listChats(resolved.jsonlDir);
+    const chats = await listChats(resolved.projectDir);
     const filtered = filterStr ? filterRows(chats, chatCols, filterStr) : chats;
     if (filtered.length === 0) {
       console.log("(no chats)");
@@ -151,16 +142,15 @@ export async function runLs(
   }
 
   if (resolved.type === "messages") {
-    const chat = await loadChat(resolved.jsonlPath);
+    const { chat } = await listMessages(resolved.chatPath);
     const message = chat.messages.find((m) => m.uuid === resolved.messageId);
     console.log(JSON.stringify(message, null, 2));
     return;
   }
 
   // resolved.type === "chat"
-  const chat = await loadChat(resolved.jsonlPath);
+  const { chat, messages } = await listMessages(resolved.chatPath);
   console.log(`${chat.title ?? "(untitled)"}  ${shortId(chat.id)}\n`);
-  const messages = chat.messages.filter((m) => m.uuid);
   const filtered = filterStr ? filterRows(messages, messageCols, filterStr) : messages;
   printTable(filtered, messageCols, sortCol);
 }

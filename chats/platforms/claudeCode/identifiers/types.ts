@@ -18,13 +18,20 @@ export type RawAddress = {
 
 export type ResolvedAddress =
   | { type: "all" }
-  | { type: "project"; projectPath: string; jsonlDir: string }
-  | { type: "chat"; projectPath: string; jsonlPath: string; chatId: string }
+  | { type: "project"; projectPath: string; projectDir: string }
+  | {
+      type: "chat";
+      projectPath: string;
+      projectDir: string;
+      chatId: string;
+      chatPath: string;
+    }
   | {
       type: "messages";
       projectPath: string;
-      jsonlPath: string;
+      projectDir: string;
       chatId: string;
+      chatPath: string;
       messageId?: string;
       messageIds: Range<string>;
     };

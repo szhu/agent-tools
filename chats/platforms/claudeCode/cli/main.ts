@@ -1,4 +1,5 @@
 import { ArgsParser, args, exit } from "@cross/utils";
+import { defaultContext } from "../data/storage.ts";
 import { parseAddress } from "../identifiers/parse.ts";
 import { runLs } from "./ls.ts";
 import { runMv } from "./mv.ts";
@@ -6,20 +7,21 @@ import { runRename } from "./rename.ts";
 
 const parsed = new ArgsParser(args());
 const [command, ...rest] = parsed.getLoose();
+const context = defaultContext();
 
 async function main() {
   switch (command) {
     case "ls":
-      return runLs(parseAddress(rest[0] ?? "."), parsed.get("sort"), parsed.get("filter"));
+      return runLs(context, parseAddress(rest[0] ?? "."), parsed.get("sort"), parsed.get("filter"));
 
     case "rename":
       if (!rest[0] || !rest[1])
         throw new Error("Usage: chats rename <chat> <new-title>");
-      return runRename(parseAddress(rest[0]), rest[1]);
+      return runRename(context, parseAddress(rest[0]), rest[1]);
 
     case "mv":
       if (!rest[0] || !rest[1]) throw new Error("Usage: chats mv <src> <dest>");
-      return runMv(parseAddress(rest[0]), parseAddress(rest[1]));
+      return runMv(context, parseAddress(rest[0]), parseAddress(rest[1]));
 
     default:
       console.error("Usage: chats <ls|rename|mv> [args...]");
