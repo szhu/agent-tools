@@ -7,9 +7,8 @@ import { runRename } from "./rename.ts";
 
 const parsed = new ArgsParser(args());
 const [command, ...rest] = parsed.getLoose();
-const context = defaultContext();
-
 async function main() {
+  const context = await defaultContext();
   switch (command) {
     case "ls":
       return runLs(context, parseAddress(rest[0] ?? "."), parsed.get("sort"), parsed.get("filter"));

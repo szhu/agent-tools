@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { join } from "node:path";
+import { join } from "@std/path";
 import type { ClaudeCodeContext } from "../data/storage.ts";
 import { resolveAddress } from "./resolve.ts";
 

@@ -1,4 +1,4 @@
-import { basename, dirname } from "node:path";
+import { basename, dirname } from "@std/path";
 import type { ClaudeCodeContext } from "../data/storage.ts";
 import {
   findProjectDir,

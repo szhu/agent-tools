@@ -1,8 +1,9 @@
-import { env, stdout } from "node:process";
+import { getEnv } from "@cross/env";
+import { stdout } from "@cross/utils";
 
 function terminalWidth(): number | undefined {
   if (stdout.columns) return stdout.columns;
-  const cols = parseInt(env["COLUMNS"] ?? "");
+  const cols = parseInt(getEnv("COLUMNS") ?? "");
   if (!isNaN(cols) && cols > 0) return cols;
   return undefined;
 }

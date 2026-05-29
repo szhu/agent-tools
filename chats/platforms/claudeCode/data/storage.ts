@@ -1,12 +1,12 @@
 import { readdir, readFile, rename, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
-import { basename, join } from "node:path";
+import { dir } from "@cross/dir";
+import { basename, join } from "@std/path";
 import type { ClaudeCodeChat, ClaudeCodeMessage } from "./types.ts";
 
 export type ClaudeCodeContext = { projectsDir: string };
 
-export function defaultContext(): ClaudeCodeContext {
-  return { projectsDir: join(homedir(), ".claude", "projects") };
+export async function defaultContext(): Promise<ClaudeCodeContext> {
+  return { projectsDir: join(await dir("home"), ".claude", "projects") };
 }
 
 // Encoding is lossy (/ and . both become -), so we encode to search, never decode

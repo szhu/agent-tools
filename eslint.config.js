@@ -12,6 +12,12 @@ export default [
     },
     rules: {
       ...typescript_eslint__eslint_plugin.configs["recommended"]?.rules,
+      "no-restricted-imports": [
+        "error",
+        { name: "node:path", message: "Use @std/path instead of node:path" },
+        { name: "node:os", message: "Use @cross/dir or @cross/env instead of node:os" },
+        { name: "node:process", message: "Use @cross/env or @cross/utils instead of node:process" },
+      ],
       "no-restricted-globals": [
         "error",
         { name: "Deno", message: "Use @cross/* or Web APIs instead of Deno.*" },

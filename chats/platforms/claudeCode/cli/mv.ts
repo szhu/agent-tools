@@ -1,4 +1,4 @@
-import { cwd } from "node:process";
+import { getEnv } from "@cross/env";
 import type { ClaudeCodeContext } from "../data/storage.ts";
 import type { RawAddress } from "../identifiers/types.ts";
 import { resolveAddress } from "../identifiers/resolve.ts";
@@ -9,7 +9,7 @@ export async function runMv(
   src: RawAddress,
   dest: RawAddress,
 ): Promise<void> {
-  const cwdPath = cwd();
+  const cwdPath = getEnv("PWD") ?? "/";
   const resolvedSrc = await resolveAddress(src, cwdPath, context);
   const resolvedDest = await resolveAddress(dest, cwdPath, context);
 

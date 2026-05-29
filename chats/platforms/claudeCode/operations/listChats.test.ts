@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { join } from "node:path";
+import { join } from "@std/path";
 import { listChats } from "./listChats.ts";
 
 const fixturesDir = join(import.meta.dirname, "../fixtures/projects");

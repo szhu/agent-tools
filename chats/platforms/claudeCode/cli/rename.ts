@@ -1,4 +1,4 @@
-import { cwd } from "node:process";
+import { getEnv } from "@cross/env";
 import type { ClaudeCodeContext } from "../data/storage.ts";
 import type { RawAddress } from "../identifiers/types.ts";
 import { resolveAddress } from "../identifiers/resolve.ts";
@@ -9,7 +9,7 @@ export async function runRename(
   raw: RawAddress,
   newTitle: string,
 ): Promise<void> {
-  const resolved = await resolveAddress(raw, cwd(), context);
+  const resolved = await resolveAddress(raw, getEnv("PWD") ?? "/", context);
   if (resolved.type !== "chat") throw new Error("Chat ID required");
   await renameChat(resolved.chatPath, newTitle);
   console.log(`Renamed ${resolved.chatId.slice(0, 8)} → "${newTitle}"`);

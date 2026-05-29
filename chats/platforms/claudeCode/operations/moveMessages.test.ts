@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { cp, mkdtemp, readdir, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dir } from "@cross/dir";
+import { join } from "@std/path";
 import { moveChat } from "./moveMessages.ts";
 
 const fixturesDir = join(import.meta.dirname, "../fixtures/projects");
@@ -9,7 +9,7 @@ const fixturesDir = join(import.meta.dirname, "../fixtures/projects");
 let tempDir: string;
 
 beforeEach(async () => {
-  tempDir = await mkdtemp(join(tmpdir(), "chats-test-"));
+  tempDir = await mkdtemp(join(await dir("tmp"), "chats-test-"));
   await cp(fixturesDir, tempDir, { recursive: true });
 });
 
