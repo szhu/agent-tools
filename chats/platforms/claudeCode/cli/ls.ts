@@ -31,7 +31,7 @@ function formatDate(ts?: string) {
   return `${get("year")}-${get("month")}-${get("day")} ${get("hour")}:${get("minute")}:${get("second")}`;
 }
 
-function contentPreview(message: ClaudeCodeMessage): string {
+export function contentPreview(message: ClaudeCodeMessage): string {
   const content = message.message?.content;
   if (!content) return "";
   let text: string;
@@ -50,6 +50,54 @@ function contentPreview(message: ClaudeCodeMessage): string {
       )
       .join("  ")
       .replace(/\n/g, "  ");
+  } else if (
+    Array.isArray(content) &&
+    content.every(
+      (item: Record<string, unknown>) => item["type"] === "tool_use",
+    )
+  ) {
+    text = content
+      .map((item: Record<string, unknown>) => {
+        const name = String(item["name"] ?? "");
+        const input = (item["input"] ?? {}) as Record<string, unknown>;
+        const description = input["description"];
+        const restInput = Object.fromEntries(
+          Object.entries(input).filter((e) => e[0] !== "description"),
+        );
+        const restInputEntries = Object.entries(restInput);
+        const restInputStr = restInputEntries.length === 0
+          ? ""
+          : restInputEntries.length === 1
+            ? " " + JSON.stringify(restInputEntries[0]![1])
+            : " " + JSON.stringify(restInput);
+        const prefix = description !== undefined
+          ? `${name} (${String(description)})`
+          : name;
+        return `${prefix}${restInputStr}`;
+      })
+      .join("  ");
+  } else if (
+    Array.isArray(content) &&
+    content.every(
+      (item: Record<string, unknown>) => "tool_use_id" in item,
+    )
+  ) {
+    text = content
+      .map((item: Record<string, unknown>) => {
+        const rest = Object.fromEntries(
+          Object.entries(item).filter(
+            (e) =>
+              e[0] !== "tool_use_id" &&
+              e[0] !== "type" &&
+              e[0] !== "is_error",
+          ),
+        );
+        const entries = Object.entries(rest);
+        return entries.length === 1
+          ? JSON.stringify(entries[0]![1])
+          : JSON.stringify(rest);
+      })
+      .join("  ");
   } else {
     const stripped = Array.isArray(content)
       ? content.map((item: Record<string, unknown>) =>
