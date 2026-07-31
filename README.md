@@ -14,6 +14,13 @@ Tools for working with Claude Code chat history stored in `~/.claude/projects/`.
 - ~~Moving a project moves its chats and VS Code workspace state together.~~ (to be implemented)
 - ~~Build on [claude-code-history-exporter](https://github.com/szhu/claude-code-history-exporter).~~ (to be implemented)
 
+### `text/`
+
+Tools for editing plain-text files as data.
+
+- `text-grid <file> read|write <range>` — read or write a rectangular slice of an ASCII text file
+- `text/ink.skill.md` — one-shot rendering of an Ink component tree to stdout
+
 ### ~~`platforms/`~~ (to be implemented)
 
 ~~One subdirectory per external platform (e.g. `facebook-messenger/`). Each contains whatever is needed to extract or work with that platform's data — userscripts, parsers, format notes.~~
@@ -24,10 +31,10 @@ Tools for working with Claude Code chat history stored in `~/.claude/projects/`.
 
 ~~**`environment-global.md`** and **`environment-project.md`** share a parallel structure, with one section per tool category (VCS, linting, etc.). Each section covers:~~
 
-~~1. What the preferred setup looks like~~
-~~2. How to detect whether it's not set up → set it up~~
-~~3. How to detect whether it's partially set up → optionally improve~~
-~~4. How to detect whether it's intentionally different → skip this section~~
+1. ~~What the preferred setup looks like~~
+2. ~~How to detect whether it's not set up → set it up~~
+3. ~~How to detect whether it's partially set up → optionally improve~~
+4. ~~How to detect whether it's intentionally different → skip this section~~
 
 ~~`environment-global.md` omits setup instructions (only needs to be done once, out of scope for now).~~
 
