@@ -61,6 +61,11 @@ export default [
           message: "Don't abbreviate: use 'context' instead of 'ctx'",
         },
         {
+          // Should match: evt, mouseEvt
+          selector: "Identifier[name=/evt/i]",
+          message: "Don't abbreviate: use 'event' instead of 'evt'",
+        },
+        {
           // Should match: arr.map(({ id }) => id)
           selector:
             "ArrowFunctionExpression > ObjectPattern, FunctionExpression > ObjectPattern",
