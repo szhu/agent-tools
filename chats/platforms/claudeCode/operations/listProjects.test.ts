@@ -18,10 +18,14 @@ describe("listProjects", () => {
       a.encoded.localeCompare(b.encoded),
     );
     expect(sorted[0]?.encoded).toBe("-Users-alice-Code-project-alpha");
-    expect(sorted[0]?.dir).toBe(join(fixturesDir, "-Users-alice-Code-project-alpha"));
+    expect(sorted[0]?.dir).toBe(
+      join(fixturesDir, "-Users-alice-Code-project-alpha"),
+    );
     expect(sorted[0]?.chatCount).toBe(2);
     expect(sorted[1]?.encoded).toBe("-Users-alice-Code-project-beta");
-    expect(sorted[1]?.dir).toBe(join(fixturesDir, "-Users-alice-Code-project-beta"));
+    expect(sorted[1]?.dir).toBe(
+      join(fixturesDir, "-Users-alice-Code-project-beta"),
+    );
     expect(sorted[1]?.chatCount).toBe(1);
   });
 

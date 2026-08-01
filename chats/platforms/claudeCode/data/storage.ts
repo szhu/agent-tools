@@ -76,4 +76,3 @@ export async function appendChatEntry(
     (await readFile(filePath, "utf-8")) + JSON.stringify(entry) + "\n",
   );
 }
-
