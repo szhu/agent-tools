@@ -246,7 +246,7 @@ interface ClaudeCodeSettings {
 /**
  * Writes a UserPromptSubmit + PostToolBatch hook entry into
  * `<configDir>/settings.json` pointing at this command. Idempotent:
- * pre-existing vcs-recent-ops entries for the same events are removed and
+ * pre-existing vcs-recent-history entries for the same events are removed and
  * replaced.
  */
 export function installClaudeCodeGlobal(opts: {
@@ -265,7 +265,7 @@ export function installClaudeCodeGlobal(opts: {
   }
 
   const settingsPath = join(opts.configDir, "settings.json");
-  const sinceFileExpr = `${opts.configDir}/vcs-recent-ops/state/$session_id`;
+  const sinceFileExpr = `${opts.configDir}/vcs-recent-history/state/$session_id`;
 
   // Build the shared prefix: extract session_id from stdin, then capture the
   // tool's stdout. The captured output is used differently per event below.
@@ -300,7 +300,7 @@ export function installClaudeCodeGlobal(opts: {
     UserPromptSubmit: userPromptSubmitCommand,
     PostToolBatch: postToolBatchCommand,
   };
-  // Scrub pre-existing vcs-recent-ops entries from every event first, so a
+  // Scrub pre-existing vcs-recent-history entries from every event first, so a
   // previous install that targeted different events (e.g. Stop) leaves no
   // stale entries behind.
   for (const event of Object.keys(hooksByEvent)) {
@@ -308,7 +308,7 @@ export function installClaudeCodeGlobal(opts: {
       return !entry?.hooks?.some(
         (hook) =>
           typeof hook?.command === "string" &&
-          hook.command.includes("vcs-recent-ops"),
+          hook.command.includes("vcs-recent-history"),
       );
     });
   }
@@ -324,7 +324,7 @@ export function installClaudeCodeGlobal(opts: {
 // -- List --
 
 /**
- * Prints the recent-ops report for the given cwd to stdout and, if a since
+ * Prints the recent-history report for the given cwd to stdout and, if a since
  * file path is provided, records the newest op's timestamp there. Silent when
  * the cwd is not a repo (under `vcs: "detect"`) or when nothing is above the
  * lower bound. Throws when an explicit `--vcs` doesn't match what's on disk.
@@ -378,12 +378,12 @@ function parseIntStrict(s: string, flag: string): number {
 }
 
 /**
- * Absolute path to the bin/vcs-recent-ops shim, derived from this file's
+ * Absolute path to the bin/vcs-recent-history shim, derived from this file's
  * location so `--install` records a stable path even when invoked via a shim.
  */
 function resolveScriptAbsPath(): string {
   const here = new URL(".", import.meta.url).pathname;
-  return join(here, "..", "..", "bin", "vcs-recent-ops");
+  return join(here, "..", "..", "bin", "vcs-recent-history");
 }
 
 /**

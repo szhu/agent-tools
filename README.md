@@ -25,7 +25,7 @@ Tools for editing plain-text files as data.
 
 Tools for working with local version control state.
 
-- `vcs-recent-ops` — report recent JJ or Git operations, designed to be wired up as a Claude Code hook. See [vcs/recent-ops](vcs/recent-ops/README.md).
+- `vcs-recent-history` — report recent JJ or Git operations, designed to be wired up as a Claude Code hook. See [vcs/recent-history](vcs/recent-history/README.md).
 
 <details>
 

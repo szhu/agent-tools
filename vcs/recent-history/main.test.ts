@@ -15,7 +15,7 @@ import {
 } from "./main.ts";
 
 const REPO_ROOT = resolve(import.meta.dir, "..", "..");
-const SHIM = join(REPO_ROOT, "bin", "vcs-recent-ops");
+const SHIM = join(REPO_ROOT, "bin", "vcs-recent-history");
 
 async function tmp(prefix: string): Promise<string> {
   return mkdtemp(join(await dir("tmp"), prefix));
@@ -237,14 +237,14 @@ describe("installClaudeCodeGlobal", () => {
     installClaudeCodeGlobal({
       limit: 3,
       configDir: dir,
-      scriptAbsPath: "/abs/bin/vcs-recent-ops",
+      scriptAbsPath: "/abs/bin/vcs-recent-history",
     });
     const settings = JSON.parse(
       await readFile(join(dir, "settings.json"), "utf8"),
     );
     for (const event of ["UserPromptSubmit", "PostToolBatch"]) {
       const s = JSON.stringify(settings.hooks[event]);
-      expect(s).toContain("/abs/bin/vcs-recent-ops");
+      expect(s).toContain("/abs/bin/vcs-recent-history");
       expect(s).toContain("--audience=agent-via-hook");
       expect(s).toContain("jq -r .session_id");
       expect(s).toContain("--since-file=");
@@ -278,13 +278,13 @@ describe("installClaudeCodeGlobal", () => {
     expect(settings.theme).toBe("dark");
   });
 
-  test("is idempotent (no duplicate vcs-recent-ops entries on re-run)", async () => {
+  test("is idempotent (no duplicate vcs-recent-history entries on re-run)", async () => {
     const dir = await tmp("vcs-install-");
     for (let i = 0; i < 3; i++) {
       installClaudeCodeGlobal({
         limit: 3,
         configDir: dir,
-        scriptAbsPath: "/abs/bin/vcs-recent-ops",
+        scriptAbsPath: "/abs/bin/vcs-recent-history",
       });
     }
     const settings = JSON.parse(
@@ -293,7 +293,7 @@ describe("installClaudeCodeGlobal", () => {
     for (const event of ["UserPromptSubmit", "PostToolBatch"]) {
       const entries = settings.hooks[event] as unknown[];
       const count = entries.filter((e) =>
-        JSON.stringify(e).includes("vcs-recent-ops"),
+        JSON.stringify(e).includes("vcs-recent-history"),
       ).length;
       expect(count).toBe(1);
     }
@@ -475,7 +475,7 @@ describe("shim end-to-end", () => {
     );
     for (const event of ["UserPromptSubmit", "PostToolBatch"]) {
       const s = JSON.stringify(settings.hooks[event]);
-      expect(s).toContain("vcs-recent-ops");
+      expect(s).toContain("vcs-recent-history");
       expect(s).toContain("--limit=5");
       expect(s).toContain(configDir);
       expect(s).toContain("jq -r .session_id");

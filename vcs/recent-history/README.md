@@ -1,4 +1,4 @@
-# vcs-recent-ops
+# vcs-recent-history
 
 Reports recent JJ or Git operations in the current repo. Designed to be usable both by a person at the terminal and by another tool (currently: a Claude Code hook) that wants to notice out-of-band VCS activity between invocations.
 
@@ -7,7 +7,7 @@ The main command knows nothing about Claude Code; a separate `--install` flag wi
 ## CLI
 
 ```
-vcs-recent-ops [--audience=human|agent-via-hook]
+vcs-recent-history [--audience=human|agent-via-hook]
                [--vcs=detect|jj|git]
                [--since=<iso-timestamp>] [--since-file=<path>]
                [--limit=N]
@@ -46,7 +46,7 @@ vcs-recent-ops [--audience=human|agent-via-hook]
 When `--audience=agent-via-hook` and there are ops above the lower bound:
 
 ```
-Hi, this is `vcs-recent-ops`. JJ ops since the last time this command ran:
+Hi, this is `vcs-recent-history`. JJ ops since the last time this command ran:
   2026-08-01T14:22:10  jj squash --into @-
   2026-08-01T14:21:55  jj new skwysppt
   2026-08-01T14:21:40  jj describe -m "..."
@@ -58,7 +58,7 @@ The word "JJ" or "Git" (and correspondingly `jj op log` or `git reflog` in the e
 The Git equivalent uses `git reflog --date=iso` and each line shows the timestamp, ref, and action/message:
 
 ```
-Hi, this is `vcs-recent-ops`. Git ops since the last time this command ran:
+Hi, this is `vcs-recent-history`. Git ops since the last time this command ran:
   2026-08-01T14:22:10  HEAD@{0}: commit: fix off-by-one in range parser
   2026-08-01T14:21:55  HEAD@{1}: checkout: moving from main to feature-x
   2026-08-01T14:21:40  HEAD@{2}: reset: moving to HEAD~1
@@ -68,19 +68,19 @@ Hi, this is `vcs-recent-ops`. Git ops since the last time this command ran:
 ## Installation as a Claude Code hook
 
 ```
-vcs-recent-ops --install=claude-code-global [--limit=N]
+vcs-recent-history --install=claude-code-global [--limit=N]
 ```
 
 This modifies `~/.claude/settings.json` to register the command under the `UserPromptSubmit` and `Stop` hooks. The installed hook command always has an explicit `--limit` (default 3, or whatever was passed to `--install`):
 
 ```
-/absolute/path/to/bin/vcs-recent-ops \
+/absolute/path/to/bin/vcs-recent-history \
   --audience=agent-via-hook \
-  --since-file="$HOME/.claude/vcs-recent-ops/state/$CLAUDE_SESSION_ID" \
+  --since-file="$HOME/.claude/vcs-recent-history/state/$CLAUDE_SESSION_ID" \
   --limit=3
 ```
 
-State lives at `~/.claude/vcs-recent-ops/state/<session-id>`, one file per Claude Code session. Deleting the directory resets all sessions.
+State lives at `~/.claude/vcs-recent-history/state/<session-id>`, one file per Claude Code session. Deleting the directory resets all sessions.
 
 ### Overriding the Claude config location
 
@@ -88,6 +88,6 @@ Both the `--install=claude-code-global` target and the state path it embeds hono
 
 ## Layout
 
-- `bin/vcs-recent-ops` — shell shim that execs the TypeScript entry point.
-- `vcs/recent-ops/main.ts` — implementation.
-- `vcs/recent-ops/main.test.ts` — tests.
+- `bin/vcs-recent-history` — shell shim that execs the TypeScript entry point.
+- `vcs/recent-history/main.ts` — implementation.
+- `vcs/recent-history/main.test.ts` — tests.
