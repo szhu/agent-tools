@@ -18,7 +18,7 @@ function defaultIndexPath(sessionId: string): string {
 function runQuery(cwd: string, since: string | null, limit: number): string {
   const here = new URL(".", import.meta.url).pathname;
   const queryShim = join(here, "..", "..", "..", "bin", "vcs-recent-history");
-  const shimArgs: string[] = [`--audience=agent-via-hook`, `--limit=${limit}`];
+  const shimArgs: string[] = [`--limit=${limit}`];
   if (since !== null) shimArgs.push(`--since=${since}`);
   const result = spawnSync(queryShim, shimArgs, { cwd, encoding: "utf8" });
   if (result.status !== 0) {

@@ -1,7 +1,5 @@
 import { ArgsParser, args, exit } from "@cross/utils";
-import { dirname, join } from "@std/path";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 
 // -- VCS resolution --
 
@@ -13,7 +11,6 @@ export interface HistoryEntry {
 }
 
 interface VcsSupport {
-  humanName: string;
   humanRepoName: string;
   humanOpLogCommand: string;
   isPresentCommand: string[];
@@ -22,7 +19,6 @@ interface VcsSupport {
 
 export const VCS_SUPPORT: Record<Vcs, VcsSupport> = {
   jj: {
-    humanName: "JJ",
     humanRepoName: "jj workspace",
     humanOpLogCommand: "jj op log",
     isPresentCommand: ["jj", "workspace", "root"],
@@ -65,7 +61,6 @@ export const VCS_SUPPORT: Record<Vcs, VcsSupport> = {
     },
   },
   git: {
-    humanName: "Git",
     humanRepoName: "git repository",
     humanOpLogCommand: "git reflog",
     isPresentCommand: ["git", "rev-parse", "--show-toplevel"],
@@ -143,37 +138,6 @@ export function parseIsoTimestamp(input: string): string | null {
   return trimmed;
 }
 
-// -- Since file --
-
-/**
- * Reads the stored lower-bound timestamp, or null if the file is missing.
- * Throws when the file exists but its contents aren't a valid timestamp.
- */
-export function readSinceFile(path: string): string | null {
-  let raw: string;
-  try {
-    raw = readFileSync(path, "utf8");
-  } catch (e: unknown) {
-    if ((e as NodeJS.ErrnoException)?.code === "ENOENT") return null;
-    throw e;
-  }
-  const parsed = parseIsoTimestamp(raw);
-  if (parsed === null) {
-    throw new Error(
-      `\`--since-file=${path}\` was passed but the file's contents are not a valid ISO-8601 timestamp. Ensure that the correct file was passed.`,
-    );
-  }
-  return parsed;
-}
-
-/**
- * Writes a timestamp to the since file, creating parent directories as needed.
- */
-export function writeSinceFile(path: string, timestamp: string): void {
-  mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, timestamp + "\n");
-}
-
 // -- Formatting --
 
 /**
@@ -186,17 +150,23 @@ export function filterAndFormat(
   sinceBound: string | null,
   limit: number | null,
 ): string {
-  const { humanName, humanOpLogCommand } = VCS_SUPPORT[vcs];
-  const eligible = sinceBound
-    ? entries.filter((entry) => entry.timestamp > sinceBound)
-    : entries.slice();
+  const { humanOpLogCommand } = VCS_SUPPORT[vcs];
+  // Compare as instants, not strings — jj emits local-time-no-offset and git
+  // emits local-with-offset, but the walker's sinceBound is UTC (`…Z`). String
+  // comparison across zones silently mis-orders and hides valid ops.
+  const boundMs = sinceBound === null ? null : new Date(sinceBound).getTime();
+  const eligible =
+    boundMs === null
+      ? entries.slice()
+      : entries.filter(
+          (entry) => new Date(entry.timestamp).getTime() > boundMs,
+        );
   if (eligible.length === 0) return "";
   const shown = limit === null ? eligible : eligible.slice(0, limit);
   const elided = eligible.length - shown.length;
   return (
     [
-      `Recent ${humanName} ops:`,
-      ...shown.map((entry) => `  ${entry.timestamp}  ${entry.line}`),
+      ...shown.map((entry) => `${entry.timestamp}  ${entry.line}`),
       elided > 0
         ? `${elided} more elided; run \`${humanOpLogCommand}\` to see more.`
         : undefined,
@@ -204,154 +174,6 @@ export function filterAndFormat(
       .filter((line) => line != null)
       .join("\n") + "\n"
   );
-}
-
-// -- Install --
-
-/**
- * Quotes a string for embedding inside a shell command, using single quotes for
- * opaque values and double quotes when a `$VAR` should expand at run time.
- */
-function shellQuote(s: string): string {
-  if (/[$]/.test(s)) {
-    return `"${s.replace(/(["\\`])/g, "\\$1")}"`;
-  }
-  return `'${s.replace(/'/g, `'\\''`)}'`;
-}
-
-interface ClaudeCodeSettings {
-  hooks?: Record<
-    string,
-    {
-      matcher?: string;
-      hooks: {
-        type: string;
-        command?: string;
-      }[];
-    }[]
-  >;
-  [key: string]: unknown;
-}
-
-/**
- * Writes a UserPromptSubmit + PostToolBatch hook entry into
- * `<configDir>/settings.json` pointing at this command. Idempotent:
- * pre-existing vcs-recent-history entries for the same events are removed and
- * replaced.
- */
-export function installClaudeCodeGlobal(opts: {
-  limit: number;
-  configDir: string;
-  scriptAbsPath: string;
-}): void {
-  // Claude Code passes hook context as JSON on stdin; `session_id` is the
-  // per-conversation identifier. Use jq to extract it and build the state
-  // path. `set -eu` fails loudly if jq is missing at run time or session_id
-  // is null/missing.
-  if (spawnSync("jq", ["--version"], { stdio: "ignore" }).status !== 0) {
-    throw new Error(
-      "The Claude Code hook requires `jq`. Install jq and ensure it is in $PATH.",
-    );
-  }
-
-  const settingsPath = join(opts.configDir, "settings.json");
-  const sinceFileExpr = `${opts.configDir}/vcs-recent-history/state/$session_id`;
-
-  // Build the shared prefix: extract session_id from stdin, then capture the
-  // tool's stdout. The captured output is used differently per event below.
-  const prelude =
-    `set -eu; session_id=$(jq -r .session_id); ` +
-    `output=$(${shellQuote(opts.scriptAbsPath)} --audience=agent-via-hook ` +
-    `--since-file=${shellQuote(sinceFileExpr)} --limit=${opts.limit})`;
-
-  // UserPromptSubmit: raw stdout is added to Claude's context as-is.
-  const userPromptSubmitCommand = `${prelude}; printf '%s' "$output"`;
-
-  // PostToolBatch (fires after each parallel-tool batch, before the next model
-  // call): raw stdout is not surfaced, but `additionalContext` in
-  // hookSpecificOutput is. We use this instead of Stop because Stop's schema
-  // does not permit hookSpecificOutput, so its output cannot reach Claude.
-  //
-  // Skip emission entirely when there's nothing to say, so an empty
-  // additionalContext doesn't clutter the transcript.
-  const postToolBatchCommand =
-    `${prelude}; [ -n "$output" ] && jq -n --arg ctx "$output" ` +
-    `'{hookSpecificOutput:{hookEventName:"PostToolBatch",additionalContext:$ctx}}'`;
-
-  mkdirSync(opts.configDir, { recursive: true });
-  let settings: ClaudeCodeSettings = {};
-  if (existsSync(settingsPath)) {
-    settings = JSON.parse(
-      readFileSync(settingsPath, "utf8"),
-    ) as ClaudeCodeSettings;
-  }
-  const hooksByEvent = settings["hooks"] ?? {};
-  const commandsByEvent: Record<string, string> = {
-    UserPromptSubmit: userPromptSubmitCommand,
-    PostToolBatch: postToolBatchCommand,
-  };
-  // Scrub pre-existing vcs-recent-history entries from every event first, so a
-  // previous install that targeted different events (e.g. Stop) leaves no
-  // stale entries behind.
-  for (const event of Object.keys(hooksByEvent)) {
-    hooksByEvent[event] = (hooksByEvent[event] ?? []).filter((entry) => {
-      return !entry?.hooks?.some(
-        (hook) =>
-          typeof hook?.command === "string" &&
-          hook.command.includes("vcs-recent-history"),
-      );
-    });
-  }
-  for (const [event, command] of Object.entries(commandsByEvent)) {
-    const existing = hooksByEvent[event] ?? [];
-    existing.push({ hooks: [{ type: "command", command }] });
-    hooksByEvent[event] = existing;
-  }
-  settings["hooks"] = hooksByEvent;
-  writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + "\n");
-}
-
-// -- List --
-
-/**
- * Prints the recent-history report for the given cwd to stdout and, if a since
- * file path is provided, records the newest op's timestamp there. Silent when
- * the cwd is not a repo (under `vcs: "detect"`) or when nothing is above the
- * lower bound. Throws when an explicit `--vcs` doesn't match what's on disk.
- */
-export function listRecentOps(opts: {
-  cwd: string;
-  vcsRequest: "detect" | "jj" | "git";
-  sinceBound: string | null;
-  sinceFilePath: string | null;
-  limit: number | null;
-}): void {
-  const vcs = resolveVcs(opts.cwd, opts.vcsRequest);
-
-  if (vcs === null) {
-    if (opts.vcsRequest === "detect") return;
-    throw new Error(
-      `--vcs=${opts.vcsRequest} was passed but ${opts.cwd} is not inside a ${VCS_SUPPORT[opts.vcsRequest].humanRepoName}`,
-    );
-  }
-
-  if (opts.sinceFilePath !== null && opts.sinceFilePath.endsWith("/")) {
-    throw new Error(
-      `--since-file=${opts.sinceFilePath} is not a valid file path (ends with '/'). Hint: Is a variable unset?`,
-    );
-  }
-
-  const bound =
-    opts.sinceBound ??
-    (opts.sinceFilePath !== null ? readSinceFile(opts.sinceFilePath) : null);
-
-  const entries = VCS_SUPPORT[vcs].readEntries(opts.cwd);
-  const out = filterAndFormat(entries, vcs, bound, opts.limit);
-  if (out === "") return;
-  process.stdout.write(out);
-  if (opts.sinceFilePath !== null && entries.length > 0) {
-    writeSinceFile(opts.sinceFilePath, entries[0]!.timestamp);
-  }
 }
 
 // -- CLI --
@@ -368,89 +190,45 @@ function parseIntStrict(s: string, flag: string): number {
 }
 
 /**
- * Absolute path to the bin/vcs-recent-history shim, derived from this file's
- * location so `--install` records a stable path even when invoked via a shim.
- */
-function resolveScriptAbsPath(): string {
-  const here = new URL(".", import.meta.url).pathname;
-  return join(here, "..", "..", "bin", "vcs-recent-history");
-}
-
-/**
- * Entry point: dispatches to `--install` or to a report run based on flags.
+ * Entry point: reads the VCS history and prints the report.
  */
 async function main() {
   const parsed = new ArgsParser(args(), {});
-  const install = parsed.get("install");
-  const audience = parsed.get("audience");
   const since = parsed.get("since");
-  const sinceFile = parsed.get("since-file");
   const limitStr = parsed.get("limit");
   const vcsFlag = parsed.get("vcs");
 
-  if (install !== undefined) {
-    if (install !== "claude-code-global") {
-      throw new Error(`--install target not supported: ${install}`);
-    }
-    if (audience !== undefined) {
-      throw new Error("--install disallows --audience");
-    }
-    if (sinceFile !== undefined) {
-      throw new Error("--install disallows --since-file");
-    }
-    const limit =
-      limitStr === undefined ? 3 : parseIntStrict(String(limitStr), "--limit");
-    const configDir =
-      process.env["CLAUDE_CONFIG_DIR"] ??
-      join(process.env["HOME"] ?? "", ".claude");
-    installClaudeCodeGlobal({
-      limit,
-      configDir,
-      scriptAbsPath: resolveScriptAbsPath(),
-    });
-    return;
-  } else {
-    const chosenAudience = (audience ?? "human") as string;
-    if (chosenAudience === "human") {
-      throw new Error("--audience=human is not implemented yet");
-    }
-    if (chosenAudience !== "agent-via-hook") {
-      throw new Error(
-        `--audience must be 'human' or 'agent-via-hook' (got: ${chosenAudience})`,
-      );
-    }
-    if (since !== undefined && sinceFile !== undefined) {
-      throw new Error("--since and --since-file are mutually exclusive");
-    }
-    const vcsChoice = (vcsFlag ?? "detect") as string;
-    if (!["detect", "jj", "git"].includes(vcsChoice)) {
-      throw new Error(
-        `--vcs must be one of 'detect', 'jj', or 'git' (got: ${vcsChoice})`,
-      );
-    }
-    let sinceBound: string | null = null;
-    if (typeof since === "string") {
-      const parsedSince = parseIsoTimestamp(since);
-      if (parsedSince === null) {
-        throw new Error(
-          `--since must be a valid ISO-8601 timestamp (got: ${since})`,
-        );
-      }
-      sinceBound = parsedSince;
-    }
-    const limit =
-      limitStr === undefined
-        ? null
-        : parseIntStrict(String(limitStr), "--limit");
-
-    listRecentOps({
-      cwd: process.cwd(),
-      vcsRequest: vcsChoice as "detect" | "jj" | "git",
-      sinceBound,
-      sinceFilePath: typeof sinceFile === "string" ? sinceFile : null,
-      limit,
-    });
+  const vcsChoice = (vcsFlag ?? "detect") as string;
+  if (!["detect", "jj", "git"].includes(vcsChoice)) {
+    throw new Error(
+      `--vcs must be one of 'detect', 'jj', or 'git' (got: ${vcsChoice})`,
+    );
   }
+
+  let sinceBound: string | null = null;
+  if (typeof since === "string") {
+    const parsedSince = parseIsoTimestamp(since);
+    if (parsedSince === null) {
+      throw new Error(
+        `--since must be a valid ISO-8601 timestamp (got: ${since})`,
+      );
+    }
+    sinceBound = parsedSince;
+  }
+  const limit =
+    limitStr === undefined ? null : parseIntStrict(String(limitStr), "--limit");
+
+  const cwd = process.cwd();
+  const vcs = resolveVcs(cwd, vcsChoice as "detect" | "jj" | "git");
+  if (vcs === null) {
+    if (vcsChoice === "detect") return;
+    throw new Error(
+      `--vcs=${vcsChoice} was passed but ${cwd} is not inside a ${VCS_SUPPORT[vcsChoice as "jj" | "git"].humanRepoName}`,
+    );
+  }
+  const entries = VCS_SUPPORT[vcs].readEntries(cwd);
+  const out = filterAndFormat(entries, vcs, sinceBound, limit);
+  if (out !== "") process.stdout.write(out);
 }
 
 if (import.meta.main) {
