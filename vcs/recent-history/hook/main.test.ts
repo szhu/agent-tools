@@ -25,6 +25,72 @@ async function makeJjRepo(): Promise<string> {
   return d;
 }
 
+async function makeGitRepo(): Promise<string> {
+  const d = await mkdtemp(join(await dir("tmp"), "vcs-git-e2e-"));
+  spawnSync("git", ["init", "-q"], { cwd: d });
+  spawnSync("git", ["config", "user.email", "test@example.com"], { cwd: d });
+  spawnSync("git", ["config", "user.name", "Test"], { cwd: d });
+  spawnSync("git", ["commit", "--allow-empty", "-q", "-m", "first"], {
+    cwd: d,
+  });
+  spawnSync("git", ["commit", "--allow-empty", "-q", "-m", "second"], {
+    cwd: d,
+  });
+  return d;
+}
+
+async function writeMinimalTranscript(dir: string): Promise<string> {
+  const tPath = join(dir, "transcript.jsonl");
+  await writeFile(
+    tPath,
+    [
+      JSON.stringify({
+        type: "user",
+        uuid: "u1",
+        parentUuid: null,
+        promptId: "p1",
+        timestamp: "2026-08-01T10:00:00Z",
+      }),
+      JSON.stringify({ type: "last-prompt", leafUuid: "u1" }),
+    ].join("\n") + "\n",
+  );
+  return tPath;
+}
+
+async function seedIndex(dir: string, id: string): Promise<string> {
+  const indexPath = join(dir, "index.jsonl");
+  await writeFile(
+    indexPath,
+    JSON.stringify({ id, ts: "2000-01-01T00:00:00Z" }) + "\n",
+  );
+  return indexPath;
+}
+
+interface HookEnvelope {
+  hookSpecificOutput: {
+    hookEventName: string;
+    additionalContext: string;
+  };
+}
+
+function extractAdditionalContext(
+  stdout: string,
+  expectedEvent: string,
+): string {
+  const parsed = JSON.parse(stdout) as HookEnvelope;
+  expect(parsed.hookSpecificOutput.hookEventName).toBe(expectedEvent);
+  return parsed.hookSpecificOutput.additionalContext;
+}
+
+function assertOpeningAndTrailer(
+  body: string,
+  opening: string,
+  trailer: string,
+): void {
+  expect(body.startsWith(opening + "\n")).toBe(true);
+  expect(body.endsWith("\n" + trailer + "\n")).toBe(true);
+}
+
 async function writeTranscript(lines: object[]): Promise<string> {
   const d = await mkdtemp(join(await dir("tmp"), "vcs-transcript-"));
   const path = join(d, "t.jsonl");
@@ -393,6 +459,167 @@ test("PostToolUse above 300ms emits disclaimer", async () => {
   expect(res.stdout).toContain("double checking");
   expect(res.stdout).toContain("additionalContext");
   expect(res.stdout).toContain("(5.0s)");
+});
+
+test("exact wording: UserPromptSubmit non-baseline jj repo", async () => {
+  const repo = await makeJjRepo();
+  const indexDir = await mkdtemp(join(await dir("tmp"), "vcs-idx-"));
+  const tPath = await writeMinimalTranscript(indexDir);
+  const indexPath = await seedIndex(indexDir, "p1");
+  const payload = JSON.stringify({
+    hook_event_name: "UserPromptSubmit",
+    session_id: "s1",
+    transcript_path: tPath,
+    prompt_id: "p_new",
+  });
+  const res = spawnSync(HOOK_SHIM, ["--limit=3"], {
+    cwd: repo,
+    input: payload,
+    encoding: "utf8",
+    env: { ...process.env, VCS_RECENT_HISTORY_HOOK_INDEX: indexPath },
+  });
+  expect(res.status).toBe(0);
+  const opening =
+    "Notification: These JJ operations occurred since the end of your last tool call; they were definitely not caused by any of your foreground actions.";
+  const trailer =
+    "This is just an FYI in case you are making changes that relate to the above. You don't have to do anything with the output if it's pretty clear that the user/background task/background agent is working on an orthogonal task, or if the changes seem to be part of an automated process from a VCS client.";
+  // UserPromptSubmit emits raw stdout, no envelope.
+  assertOpeningAndTrailer(res.stdout, opening, trailer);
+  expect(res.stdout).not.toContain("hookSpecificOutput");
+});
+
+test("exact wording: PreToolUse non-baseline jj repo", async () => {
+  const repo = await makeJjRepo();
+  const indexDir = await mkdtemp(join(await dir("tmp"), "vcs-idx-"));
+  const tPath = await writeMinimalTranscript(indexDir);
+  const indexPath = await seedIndex(indexDir, "p1");
+  const payload = JSON.stringify({
+    hook_event_name: "PreToolUse",
+    session_id: "s1",
+    transcript_path: tPath,
+    prompt_id: "p1",
+    tool_use_id: "toolu_new",
+  });
+  const res = spawnSync(HOOK_SHIM, ["--limit=3"], {
+    cwd: repo,
+    input: payload,
+    encoding: "utf8",
+    env: { ...process.env, VCS_RECENT_HISTORY_HOOK_INDEX: indexPath },
+  });
+  expect(res.status).toBe(0);
+  const body = extractAdditionalContext(res.stdout, "PreToolUse");
+  const opening =
+    "Notification: These JJ operations occurred since the end of your last tool call; they were definitely not caused by any of your foreground actions.";
+  const trailer =
+    "This is just an FYI in case you are making changes that relate to the above. You don't have to do anything with the output if it's pretty clear that the user/background task/background agent is working on an orthogonal task, or if the changes seem to be part of an automated process from a VCS client.";
+  assertOpeningAndTrailer(body, opening, trailer);
+});
+
+test("exact wording: PostToolUse fast non-baseline jj repo", async () => {
+  const repo = await makeJjRepo();
+  const indexDir = await mkdtemp(join(await dir("tmp"), "vcs-idx-"));
+  const tPath = await writeMinimalTranscript(indexDir);
+  const indexPath = await seedIndex(indexDir, "p1");
+  const payload = JSON.stringify({
+    hook_event_name: "PostToolUse",
+    session_id: "s1",
+    transcript_path: tPath,
+    prompt_id: "p1",
+    tool_use_id: "toolu_A",
+    duration_ms: 100,
+  });
+  const res = spawnSync(HOOK_SHIM, ["--limit=3"], {
+    cwd: repo,
+    input: payload,
+    encoding: "utf8",
+    env: { ...process.env, VCS_RECENT_HISTORY_HOOK_INDEX: indexPath },
+  });
+  expect(res.status).toBe(0);
+  const body = extractAdditionalContext(res.stdout, "PostToolUse");
+  const opening =
+    "These JJ operations occurred during your tool call; they were likely caused by your actions.";
+  const trailer = "This is just an FYI so you can check your work.";
+  assertOpeningAndTrailer(body, opening, trailer);
+});
+
+test("exact wording: PostToolUse slow non-baseline jj repo", async () => {
+  const repo = await makeJjRepo();
+  const indexDir = await mkdtemp(join(await dir("tmp"), "vcs-idx-"));
+  const tPath = await writeMinimalTranscript(indexDir);
+  const indexPath = await seedIndex(indexDir, "p1");
+  const payload = JSON.stringify({
+    hook_event_name: "PostToolUse",
+    session_id: "s1",
+    transcript_path: tPath,
+    prompt_id: "p1",
+    tool_use_id: "toolu_A",
+    duration_ms: 5000,
+  });
+  const res = spawnSync(HOOK_SHIM, ["--limit=3"], {
+    cwd: repo,
+    input: payload,
+    encoding: "utf8",
+    env: { ...process.env, VCS_RECENT_HISTORY_HOOK_INDEX: indexPath },
+  });
+  expect(res.status).toBe(0);
+  const body = extractAdditionalContext(res.stdout, "PostToolUse");
+  const opening = "These JJ operations occurred during your tool call:";
+  const trailer =
+    "This is just an FYI in case you are making changes that relate to the above. Your tool call was not instantaneous (5.0s) and this hook is not able to automatically determine whether the changes were caused by your foreground actions or the user/background tasks/background agents; consider double checking.";
+  assertOpeningAndTrailer(body, opening, trailer);
+});
+
+test("exact wording: baseline UserPromptSubmit jj repo", async () => {
+  const repo = await makeJjRepo();
+  const indexDir = await mkdtemp(join(await dir("tmp"), "vcs-idx-"));
+  const tPath = await writeMinimalTranscript(indexDir);
+  // No pre-seeded index → baseline branch.
+  const payload = JSON.stringify({
+    hook_event_name: "UserPromptSubmit",
+    session_id: "s1",
+    transcript_path: tPath,
+    prompt_id: "p_new",
+  });
+  const res = spawnSync(HOOK_SHIM, ["--limit=3"], {
+    cwd: repo,
+    input: payload,
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      VCS_RECENT_HISTORY_HOOK_INDEX: join(indexDir, "index.jsonl"),
+    },
+  });
+  expect(res.status).toBe(0);
+  const opening = "Notification: Here are the most recent JJ operations:";
+  const trailer =
+    "This is just an FYI in case you are making changes that relate to the above. Next time when this hook runs, we'll only show you changes that occurred since now.";
+  assertOpeningAndTrailer(res.stdout, opening, trailer);
+});
+
+test("exact wording: git-only repo UserPromptSubmit non-baseline", async () => {
+  const repo = await makeGitRepo();
+  const indexDir = await mkdtemp(join(await dir("tmp"), "vcs-idx-"));
+  const tPath = await writeMinimalTranscript(indexDir);
+  const indexPath = await seedIndex(indexDir, "p1");
+  const payload = JSON.stringify({
+    hook_event_name: "UserPromptSubmit",
+    session_id: "s1",
+    transcript_path: tPath,
+    prompt_id: "p_new",
+  });
+  const res = spawnSync(HOOK_SHIM, ["--limit=3"], {
+    cwd: repo,
+    input: payload,
+    encoding: "utf8",
+    env: { ...process.env, VCS_RECENT_HISTORY_HOOK_INDEX: indexPath },
+  });
+  expect(res.status).toBe(0);
+  const opening =
+    "Notification: These Git reflog entries occurred since the end of your last tool call; they were definitely not caused by any of your foreground actions.";
+  const trailer =
+    "This is just an FYI in case you are making changes that relate to the above. You don't have to do anything with the output if it's pretty clear that the user/background task/background agent is working on an orthogonal task, or if the changes seem to be part of an automated process from a VCS client.";
+  assertOpeningAndTrailer(res.stdout, opening, trailer);
+  expect(res.stdout).not.toContain("hookSpecificOutput");
 });
 
 describe("install / uninstall", () => {
