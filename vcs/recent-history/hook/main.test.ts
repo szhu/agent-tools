@@ -307,3 +307,81 @@ test("UserPromptSubmit fire in a jj repo emits a jj operations notification", as
   expect(res.status).toBe(0);
   expect(res.stdout).toContain("JJ ops");
 });
+
+test("PostToolUse below 300ms emits no disclaimer", async () => {
+  const repo = await makeJjRepo();
+  const indexDir = await mkdtemp(join(await dir("tmp"), "vcs-idx-"));
+  const tPath = join(indexDir, "transcript.jsonl");
+  await writeFile(
+    tPath,
+    [
+      JSON.stringify({
+        type: "user",
+        uuid: "u1",
+        parentUuid: null,
+        promptId: "p1",
+        timestamp: "2026-08-01T10:00:00Z",
+      }),
+      JSON.stringify({ type: "last-prompt", leafUuid: "u1" }),
+    ].join("\n") + "\n",
+  );
+  const payload = JSON.stringify({
+    hook_event_name: "PostToolUse",
+    session_id: "s1",
+    transcript_path: tPath,
+    prompt_id: "p1",
+    tool_use_id: "toolu_A",
+    duration_ms: 100,
+  });
+  const res = spawnSync(HOOK_SHIM, ["--limit=3"], {
+    cwd: repo,
+    input: payload,
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      VCS_RECENT_HISTORY_HOOK_INDEX: join(indexDir, "index.jsonl"),
+    },
+  });
+  expect(res.status).toBe(0);
+  expect(res.stdout).not.toContain("double checking");
+});
+
+test("PostToolUse above 300ms emits disclaimer", async () => {
+  const repo = await makeJjRepo();
+  const indexDir = await mkdtemp(join(await dir("tmp"), "vcs-idx-"));
+  const tPath = join(indexDir, "transcript.jsonl");
+  await writeFile(
+    tPath,
+    [
+      JSON.stringify({
+        type: "user",
+        uuid: "u1",
+        parentUuid: null,
+        promptId: "p1",
+        timestamp: "2026-08-01T10:00:00Z",
+      }),
+      JSON.stringify({ type: "last-prompt", leafUuid: "u1" }),
+    ].join("\n") + "\n",
+  );
+  const payload = JSON.stringify({
+    hook_event_name: "PostToolUse",
+    session_id: "s1",
+    transcript_path: tPath,
+    prompt_id: "p1",
+    tool_use_id: "toolu_A",
+    duration_ms: 5000,
+  });
+  const res = spawnSync(HOOK_SHIM, ["--limit=3"], {
+    cwd: repo,
+    input: payload,
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      VCS_RECENT_HISTORY_HOOK_INDEX: join(indexDir, "index.jsonl"),
+    },
+  });
+  expect(res.status).toBe(0);
+  expect(res.stdout).toContain("double checking");
+  expect(res.stdout).toContain("additionalContext");
+  expect(res.stdout).toContain("(5.0s)");
+});
