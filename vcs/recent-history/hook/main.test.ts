@@ -1,7 +1,8 @@
 import { dir } from "@cross/dir";
 import { join } from "@std/path";
 import { describe, expect, test } from "bun:test";
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { appendIndex, readIndex } from "./index.ts";
 import { parseHookInput } from "./input.ts";
 import { findPreviousFireTimestamp } from "./transcript.ts";
 
@@ -216,5 +217,37 @@ describe("findPreviousFireTimestamp", () => {
         index: new Map(),
       }),
     ).toBeNull();
+  });
+});
+
+describe("hook index", () => {
+  test("reads an empty/missing file as empty map", async () => {
+    const d = await mkdtemp(join(await dir("tmp"), "vcs-idx-"));
+    expect(readIndex(join(d, "no.jsonl")).size).toBe(0);
+  });
+
+  test("append then read round-trips", async () => {
+    const d = await mkdtemp(join(await dir("tmp"), "vcs-idx-"));
+    const path = join(d, "i.jsonl");
+    appendIndex(path, "id1", "2026-08-01T10:00:00Z");
+    appendIndex(path, "id2", "2026-08-01T10:00:10Z");
+    const map = readIndex(path);
+    expect(map.get("id1")).toBe("2026-08-01T10:00:00Z");
+    expect(map.get("id2")).toBe("2026-08-01T10:00:10Z");
+    expect(map.size).toBe(2);
+  });
+
+  test("rotates when line count exceeds cap * 1.5", async () => {
+    const d = await mkdtemp(join(await dir("tmp"), "vcs-idx-"));
+    const path = join(d, "i.jsonl");
+    for (let i = 0; i < 200; i++) {
+      appendIndex(path, `id${i}`, `T${i}`, 100);
+    }
+    const contents = await readFile(path, "utf8");
+    const lines = contents.trim().split("\n");
+    expect(lines.length).toBeLessThanOrEqual(150);
+    expect(lines.length).toBeGreaterThanOrEqual(100);
+    const map = readIndex(path);
+    expect(map.get("id199")).toBe("T199");
   });
 });
