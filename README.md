@@ -26,6 +26,7 @@ Tools for editing plain-text files as data.
 Tools for working with local version control state.
 
 - `vcs-recent-history` — report recent JJ or Git operations, designed to be wired up as a Claude Code hook. See [vcs/recent-history](vcs/recent-history/README.md).
+- `vcs-recent-history-hook` — installs Claude Code hooks that surface VCS history entries with a transcript-derived watermark; helps the agent attribute changes to its own tool calls vs. external activity. See [vcs/recent-history/hook](vcs/recent-history/hook/README.md).
 
 <details>
 
