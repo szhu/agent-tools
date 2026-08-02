@@ -305,7 +305,7 @@ test("UserPromptSubmit fire in a jj repo emits a jj operations notification", as
     },
   });
   expect(res.status).toBe(0);
-  expect(res.stdout).toContain("JJ ops");
+  expect(res.stdout).toContain("JJ operations");
 });
 
 test("PostToolUse below 300ms emits no disclaimer", async () => {
@@ -363,6 +363,14 @@ test("PostToolUse above 300ms emits disclaimer", async () => {
       JSON.stringify({ type: "last-prompt", leafUuid: "u1" }),
     ].join("\n") + "\n",
   );
+  // Pre-seed the index so the walker finds a prior fire (p1) via the
+  // transcript's promptId. Without this we'd land in the baseline branch,
+  // which suppresses the disclaimer.
+  const indexPath = join(indexDir, "index.jsonl");
+  await writeFile(
+    indexPath,
+    JSON.stringify({ id: "p1", ts: "2000-01-01T00:00:00Z" }) + "\n",
+  );
   const payload = JSON.stringify({
     hook_event_name: "PostToolUse",
     session_id: "s1",
@@ -377,7 +385,7 @@ test("PostToolUse above 300ms emits disclaimer", async () => {
     encoding: "utf8",
     env: {
       ...process.env,
-      VCS_RECENT_HISTORY_HOOK_INDEX: join(indexDir, "index.jsonl"),
+      VCS_RECENT_HISTORY_HOOK_INDEX: indexPath,
     },
   });
   expect(res.status).toBe(0);

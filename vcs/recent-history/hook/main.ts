@@ -26,21 +26,81 @@ function runQuery(cwd: string, since: string | null, limit: number): string {
   return result.stdout;
 }
 
-const BASELINE_PREFIX = "First observation in this conversation. ";
-function disclaimerTemplate(durationMs: number): string {
-  return `Note: this tool call was not instantaneous (${(durationMs / 1000).toFixed(1)}s) and this hook is not able to automatically determine whether the changes were caused by your foreground actions or the user/background tasks/background agents; consider double checking.\n`;
+/**
+ * Extracts the VCS-native term pair (label + entry noun) from the query CLI's
+ * first output line, which currently reads "Recent JJ ops:" or "Recent Git
+ * ops:". We use the native tool's vocabulary in agent-facing prose per the
+ * plan's terminology rule.
+ */
+function vcsTermsFromQueryHeader(header: string): {
+  label: string;
+  entryTerm: string;
+} {
+  if (header.includes("Git"))
+    return { label: "Git", entryTerm: "reflog entries" };
+  return { label: "JJ", entryTerm: "operations" };
+}
+
+/**
+ * Composes the event-specific opening line and FYI trailer per the plan's
+ * Example Outputs.
+ */
+function makeFraming(
+  event: HookEvent,
+  vcsLabel: string,
+  entryTerm: string,
+  opts: { baseline: boolean; disclaimerDurationMs: number | null },
+): { opening: string; trailer: string } {
+  if (opts.baseline) {
+    return {
+      opening: `Notification: Here are the most recent ${vcsLabel} ${entryTerm}:`,
+      trailer:
+        "This is just an FYI in case you are making changes that relate to the above. Next time when this hook runs, we'll only show you changes that occurred since now.",
+    };
+  }
+  if (event === "UserPromptSubmit" || event === "PreToolUse") {
+    return {
+      opening: `Notification: These ${vcsLabel} ${entryTerm} occurred since the end of your last tool call; they were definitely not caused by any of your foreground actions.`,
+      trailer:
+        "This is just an FYI in case you are making changes that relate to the above. You don't have to do anything with the output if it's pretty clear that the user/background task/background agent is working on an orthogonal task, or if the changes seem to be part of an automated process from a VCS client.",
+    };
+  }
+  // PostToolUse
+  if (opts.disclaimerDurationMs === null) {
+    return {
+      opening: `These ${vcsLabel} ${entryTerm} occurred during your tool call; they were likely caused by your actions.`,
+      trailer: "This is just an FYI so you can check your work.",
+    };
+  }
+  const durationSeconds = (opts.disclaimerDurationMs / 1000).toFixed(1);
+  return {
+    opening: `These ${vcsLabel} ${entryTerm} occurred during your tool call:`,
+    trailer: `This is just an FYI in case you are making changes that relate to the above. Your tool call was not instantaneous (${durationSeconds}s) and this hook is not able to automatically determine whether the changes were caused by your foreground actions or the user/background tasks/background agents; consider double checking.`,
+  };
 }
 
 function emitForEvent(
   event: HookEvent,
-  body: string,
+  queryOutput: string,
   opts: { baseline: boolean; disclaimerDurationMs: number | null },
 ): void {
-  let finalBody = body;
-  if (opts.baseline) finalBody = BASELINE_PREFIX + finalBody;
-  if (opts.disclaimerDurationMs !== null) {
-    finalBody = finalBody + disclaimerTemplate(opts.disclaimerDurationMs);
-  }
+  // Query CLI output shape:
+  //   Recent JJ ops:
+  //     <row>
+  //     ...
+  //   N more elided; run `jj op log` to see more.
+  // Strip the first line (the query CLI header) and replace with our per-event
+  // opening; append the per-event trailer.
+  const newlineIndex = queryOutput.indexOf("\n");
+  const queryHeader =
+    newlineIndex >= 0 ? queryOutput.slice(0, newlineIndex) : queryOutput;
+  const body = newlineIndex >= 0 ? queryOutput.slice(newlineIndex + 1) : "";
+  const { label, entryTerm } = vcsTermsFromQueryHeader(queryHeader);
+  const { opening, trailer } = makeFraming(event, label, entryTerm, opts);
+
+  // body already ends with `\n`; add another to separate from the trailer.
+  const finalBody = `${opening}\n${body}\n${trailer}\n`;
+
   if (event === "UserPromptSubmit") {
     process.stdout.write(finalBody);
     return;
