@@ -1,5 +1,16 @@
+import { dir } from "@cross/dir";
+import { join } from "@std/path";
 import { describe, expect, test } from "bun:test";
+import { mkdtemp, writeFile } from "node:fs/promises";
 import { parseHookInput } from "./input.ts";
+import { findPreviousFireTimestamp } from "./transcript.ts";
+
+async function writeTranscript(lines: object[]): Promise<string> {
+  const d = await mkdtemp(join(await dir("tmp"), "vcs-transcript-"));
+  const path = join(d, "t.jsonl");
+  await writeFile(path, lines.map((l) => JSON.stringify(l)).join("\n") + "\n");
+  return path;
+}
 
 describe("parseHookInput", () => {
   test("UserPromptSubmit shape", () => {
@@ -38,5 +49,172 @@ describe("parseHookInput", () => {
       prompt_id: "p1",
     });
     expect(() => parseHookInput(raw)).toThrow(/unsupported/);
+  });
+});
+
+describe("findPreviousFireTimestamp", () => {
+  test("returns null when index is empty", async () => {
+    const path = await writeTranscript([
+      {
+        type: "user",
+        uuid: "u1",
+        parentUuid: null,
+        promptId: "p1",
+        timestamp: "2026-08-01T10:00:00Z",
+      },
+      { type: "last-prompt", leafUuid: "u1" },
+    ]);
+    expect(
+      findPreviousFireTimestamp({
+        transcriptPath: path,
+        index: new Map(),
+      }),
+    ).toBeNull();
+  });
+
+  test("finds a promptId ancestor", async () => {
+    const path = await writeTranscript([
+      {
+        type: "user",
+        uuid: "u1",
+        parentUuid: null,
+        promptId: "p1",
+        timestamp: "2026-08-01T10:00:00Z",
+      },
+      {
+        type: "assistant",
+        uuid: "u2",
+        parentUuid: "u1",
+        timestamp: "2026-08-01T10:00:10Z",
+        message: { content: [] },
+      },
+      {
+        type: "user",
+        uuid: "u3",
+        parentUuid: "u2",
+        promptId: "p2",
+        timestamp: "2026-08-01T10:00:20Z",
+      },
+      { type: "last-prompt", leafUuid: "u3" },
+    ]);
+    const index = new Map<string, string>([["p1", "2026-08-01T10:00:00.500Z"]]);
+    const result = findPreviousFireTimestamp({
+      transcriptPath: path,
+      index,
+    });
+    expect(result).toBe("2026-08-01T10:00:00.500Z");
+  });
+
+  test("finds a tool_use.id ancestor", async () => {
+    const path = await writeTranscript([
+      {
+        type: "user",
+        uuid: "u1",
+        parentUuid: null,
+        promptId: "p1",
+        timestamp: "2026-08-01T10:00:00Z",
+      },
+      {
+        type: "assistant",
+        uuid: "u2",
+        parentUuid: "u1",
+        timestamp: "2026-08-01T10:00:10Z",
+        message: {
+          content: [
+            { type: "tool_use", id: "toolu_A", name: "Bash", input: {} },
+          ],
+        },
+      },
+      { type: "last-prompt", leafUuid: "u2" },
+    ]);
+    const index = new Map<string, string>([
+      ["toolu_A", "2026-08-01T10:00:10.100Z"],
+    ]);
+    const result = findPreviousFireTimestamp({
+      transcriptPath: path,
+      index,
+    });
+    expect(result).toBe("2026-08-01T10:00:10.100Z");
+  });
+
+  test("returns a hit even when the ancestor id matches the current fire's id — walker does not self-exclude, and correctness depends on the caller writing to the index AFTER this returns", async () => {
+    // Scenario: PostToolUse for toolu_A. Its own tool_use.id is in the transcript
+    // (as an assistant tool_use ancestor). PreToolUse for the SAME toolu_A already
+    // fired earlier and wrote {toolu_A: T_pre} to the index. Walker must return
+    // T_pre — that's the previous hook fire's timestamp.
+    //
+    // This test would fail if:
+    //   (a) The walker self-excluded by raw id (would skip toolu_A and return null).
+    //   (b) The caller wrote the current fire's id to the index BEFORE calling this
+    //       function (walker would see the current fire's fresh writeback instead
+    //       of the prior fire's, and return current time).
+    const path = await writeTranscript([
+      {
+        type: "user",
+        uuid: "u1",
+        parentUuid: null,
+        promptId: "p1",
+        timestamp: "2026-08-01T10:00:00Z",
+      },
+      {
+        type: "assistant",
+        uuid: "u2",
+        parentUuid: "u1",
+        timestamp: "2026-08-01T10:00:05Z",
+        message: {
+          content: [
+            { type: "tool_use", id: "toolu_A", name: "Bash", input: {} },
+          ],
+        },
+      },
+      { type: "last-prompt", leafUuid: "u2" },
+    ]);
+    const index = new Map<string, string>([
+      ["toolu_A", "2026-08-01T10:00:05.500Z"], // PreToolUse's write
+    ]);
+    const result = findPreviousFireTimestamp({
+      transcriptPath: path,
+      index,
+    });
+    expect(result).toBe("2026-08-01T10:00:05.500Z");
+  });
+
+  test("stops at the first ancestor hit even if older ones also match", async () => {
+    const path = await writeTranscript([
+      {
+        type: "user",
+        uuid: "u1",
+        parentUuid: null,
+        promptId: "p1",
+        timestamp: "2026-08-01T10:00:00Z",
+      },
+      {
+        type: "user",
+        uuid: "u2",
+        parentUuid: "u1",
+        promptId: "p2",
+        timestamp: "2026-08-01T10:00:10Z",
+      },
+      { type: "last-prompt", leafUuid: "u2" },
+    ]);
+    const index = new Map<string, string>([
+      ["p1", "T-old"],
+      ["p2", "T-new"],
+    ]);
+    expect(
+      findPreviousFireTimestamp({
+        transcriptPath: path,
+        index,
+      }),
+    ).toBe("T-new");
+  });
+
+  test("returns null when the transcript file doesn't exist yet — fresh sessions fire UserPromptSubmit before Claude Code has written any transcript", () => {
+    expect(
+      findPreviousFireTimestamp({
+        transcriptPath: "/tmp/does-not-exist-vcs-hook.jsonl",
+        index: new Map(),
+      }),
+    ).toBeNull();
   });
 });
