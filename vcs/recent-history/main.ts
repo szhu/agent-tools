@@ -7,7 +7,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 
 type Vcs = "jj" | "git";
 
-export interface Op {
+export interface HistoryEntry {
   timestamp: string;
   line: string;
 }
@@ -17,7 +17,7 @@ interface VcsSupport {
   humanRepoName: string;
   humanOpLogCommand: string;
   isPresentCommand: string[];
-  readOps(cwd: string): Op[];
+  readEntries(cwd: string): HistoryEntry[];
 }
 
 export const VCS_SUPPORT: Record<Vcs, VcsSupport> = {
@@ -28,9 +28,9 @@ export const VCS_SUPPORT: Record<Vcs, VcsSupport> = {
     isPresentCommand: ["jj", "workspace", "root"],
 
     /**
-     * The jj repo's operation log, newest first, one Op per operation.
+     * The jj repo's operation log, newest first, one HistoryEntry per operation.
      */
-    readOps(cwd: string) {
+    readEntries(cwd: string) {
       // Fields are separated by US (0x1F) and records by RS (0x1E) so
       // multi-line content (e.g. a `jj commit -m 'a\nb'` op description) stays
       // inside one record and doesn't split the frame.
@@ -45,7 +45,7 @@ export const VCS_SUPPORT: Record<Vcs, VcsSupport> = {
       if (res.status !== 0) {
         throw new Error(`jj op log failed: ${res.stderr}`);
       }
-      const ops: Op[] = [];
+      const entries: HistoryEntry[] = [];
       for (const raw of res.stdout.split("\x1E")) {
         if (!raw) continue;
         const [timestamp, attributes, description] = raw.split("\x1F");
@@ -59,9 +59,9 @@ export const VCS_SUPPORT: Record<Vcs, VcsSupport> = {
           lines.length > 1
             ? `${lines[0]} (${lines.length - 1} more lines elided)`
             : lines[0]!;
-        ops.push({ timestamp, line });
+        entries.push({ timestamp, line });
       }
-      return ops;
+      return entries;
     },
   },
   git: {
@@ -71,16 +71,16 @@ export const VCS_SUPPORT: Record<Vcs, VcsSupport> = {
     isPresentCommand: ["git", "rev-parse", "--show-toplevel"],
 
     /**
-     * The git repo's reflog, newest first, one Op per entry.
+     * The git repo's reflog, newest first, one HistoryEntry per entry.
      */
-    readOps(cwd: string): Op[] {
+    readEntries(cwd: string): HistoryEntry[] {
       const res = spawnSync(
         "git",
         ["reflog", "show", "--date=iso-strict", "--format=%gd\t%gs"],
         { cwd, encoding: "utf8" },
       );
       if (res.status !== 0) throw new Error(`git reflog failed: ${res.stderr}`);
-      const ops: Op[] = [];
+      const entries: HistoryEntry[] = [];
       let index = 0;
       for (const raw of res.stdout.split("\n")) {
         if (!raw) continue;
@@ -91,13 +91,13 @@ export const VCS_SUPPORT: Record<Vcs, VcsSupport> = {
         const match = selector.match(/^(.+?)@\{(.+)\}$/);
         if (!match) continue;
         const [, ref, timestamp] = match;
-        ops.push({
+        entries.push({
           timestamp: timestamp!,
           line: `${ref}@{${index}}: ${subject}`,
         });
         index++;
       }
-      return ops;
+      return entries;
     },
   },
 };
@@ -191,22 +191,22 @@ function pluralize(singular: string, plural: string, count: number): string {
  * and limit. Returns an empty string when there is nothing to say.
  */
 export function filterAndFormat(
-  ops: Op[],
+  entries: HistoryEntry[],
   vcs: "jj" | "git",
   sinceBound: string | null,
   limit: number | null,
 ): string {
   const { humanName, humanOpLogCommand } = VCS_SUPPORT[vcs];
   const eligible = sinceBound
-    ? ops.filter((op) => op.timestamp > sinceBound)
-    : ops.slice();
+    ? entries.filter((entry) => entry.timestamp > sinceBound)
+    : entries.slice();
   if (eligible.length === 0) return "";
   const shown = limit === null ? eligible : eligible.slice(0, limit);
   const elided = eligible.length - shown.length;
   return (
     [
       `Recent ${humanName} ops:`,
-      ...shown.map((op) => `  ${op.timestamp}  ${op.line}`),
+      ...shown.map((entry) => `  ${entry.timestamp}  ${entry.line}`),
       elided > 0
         ? `${elided} more ${pluralize("op", "ops", elided)} elided; run \`${humanOpLogCommand}\` to see more.`
         : undefined,
@@ -355,12 +355,12 @@ export function listRecentOps(opts: {
     opts.sinceBound ??
     (opts.sinceFilePath !== null ? readSinceFile(opts.sinceFilePath) : null);
 
-  const ops = VCS_SUPPORT[vcs].readOps(opts.cwd);
-  const out = filterAndFormat(ops, vcs, bound, opts.limit);
+  const entries = VCS_SUPPORT[vcs].readEntries(opts.cwd);
+  const out = filterAndFormat(entries, vcs, bound, opts.limit);
   if (out === "") return;
   process.stdout.write(out);
-  if (opts.sinceFilePath !== null && ops.length > 0) {
-    writeSinceFile(opts.sinceFilePath, ops[0]!.timestamp);
+  if (opts.sinceFilePath !== null && entries.length > 0) {
+    writeSinceFile(opts.sinceFilePath, entries[0]!.timestamp);
   }
 }
 

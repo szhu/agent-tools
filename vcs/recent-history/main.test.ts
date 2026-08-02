@@ -11,7 +11,7 @@ import {
   resolveVcs,
   VCS_SUPPORT,
   writeSinceFile,
-  type Op,
+  type HistoryEntry,
 } from "./main.ts";
 
 const REPO_ROOT = resolve(import.meta.dir, "..", "..");
@@ -81,39 +81,40 @@ describe("resolveVcs", () => {
   });
 });
 
-// -- VCS_SUPPORT.jj.readOps --
+// -- VCS_SUPPORT.jj.readEntries --
 
-describe("VCS_SUPPORT.jj.readOps", () => {
+describe("VCS_SUPPORT.jj.readEntries", () => {
   test("returns newest first with iso timestamps and non-empty lines", async () => {
     const dir = await makeJjRepo();
-    const ops = VCS_SUPPORT.jj.readOps(dir);
-    expect(ops.length).toBeGreaterThan(0);
-    for (const op of ops) {
-      expect(op.timestamp).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/);
-      expect(op.line.length).toBeGreaterThan(0);
+    const entries = VCS_SUPPORT.jj.readEntries(dir);
+    expect(entries.length).toBeGreaterThan(0);
+    for (const entry of entries) {
+      expect(entry.timestamp).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/);
+      expect(entry.line.length).toBeGreaterThan(0);
     }
-    const first = new Date(ops[0]!.timestamp).getTime();
-    const last = new Date(ops[ops.length - 1]!.timestamp).getTime();
+    const first = new Date(entries[0]!.timestamp).getTime();
+    const last = new Date(entries[entries.length - 1]!.timestamp).getTime();
     expect(first).toBeGreaterThanOrEqual(last);
   });
 
   test("strips 'args: ' prefix", async () => {
     const dir = await makeJjRepo();
-    const ops = VCS_SUPPORT.jj.readOps(dir);
-    for (const op of ops) expect(op.line.startsWith("args: ")).toBe(false);
+    const entries = VCS_SUPPORT.jj.readEntries(dir);
+    for (const entry of entries)
+      expect(entry.line.startsWith("args: ")).toBe(false);
   });
 });
 
-// -- VCS_SUPPORT.git.readOps --
+// -- VCS_SUPPORT.git.readEntries --
 
-describe("VCS_SUPPORT.git.readOps", () => {
+describe("VCS_SUPPORT.git.readEntries", () => {
   test("returns entries with iso timestamps and HEAD@{N} lines", async () => {
     const dir = await makeGitRepo();
-    const ops = VCS_SUPPORT.git.readOps(dir);
-    expect(ops.length).toBeGreaterThanOrEqual(2);
-    for (const op of ops) {
-      expect(op.timestamp).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/);
-      expect(op.line).toMatch(/^HEAD@\{\d+\}:/);
+    const entries = VCS_SUPPORT.git.readEntries(dir);
+    expect(entries.length).toBeGreaterThanOrEqual(2);
+    for (const entry of entries) {
+      expect(entry.timestamp).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/);
+      expect(entry.line).toMatch(/^HEAD@\{\d+\}:/);
     }
   });
 });
@@ -188,7 +189,7 @@ describe("writeSinceFile", () => {
 
 // -- filterAndFormat --
 
-const SAMPLE_OPS: Op[] = [
+const SAMPLE_OPS: HistoryEntry[] = [
   { timestamp: "2026-08-01T14:22:10", line: "jj squash --into @-" },
   { timestamp: "2026-08-01T14:21:55", line: "jj new skwysppt" },
   { timestamp: "2026-08-01T14:21:40", line: 'jj describe -m "..."' },
