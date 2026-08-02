@@ -1,10 +1,28 @@
 import { dir } from "@cross/dir";
-import { join } from "@std/path";
+import { join, resolve } from "@std/path";
 import { describe, expect, test } from "bun:test";
+import { spawnSync } from "node:child_process";
 import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { appendIndex, readIndex } from "./index.ts";
 import { parseHookInput } from "./input.ts";
 import { findPreviousFireTimestamp } from "./transcript.ts";
+
+const HOOK_SHIM = resolve(
+  import.meta.dir,
+  "..",
+  "..",
+  "..",
+  "bin",
+  "vcs-recent-history-hook",
+);
+
+async function makeJjRepo(): Promise<string> {
+  const d = await mkdtemp(join(await dir("tmp"), "vcs-e2e-"));
+  spawnSync("jj", ["git", "init"], { cwd: d });
+  spawnSync("jj", ["describe", "-m", "one"], { cwd: d });
+  spawnSync("jj", ["new", "-m", "two"], { cwd: d });
+  return d;
+}
 
 async function writeTranscript(lines: object[]): Promise<string> {
   const d = await mkdtemp(join(await dir("tmp"), "vcs-transcript-"));
@@ -250,4 +268,42 @@ describe("hook index", () => {
     const map = readIndex(path);
     expect(map.get("id199")).toBe("T199");
   });
+});
+
+test("UserPromptSubmit fire in a jj repo emits a jj operations notification", async () => {
+  const repo = await makeJjRepo();
+  const indexDir = await mkdtemp(join(await dir("tmp"), "vcs-idx-"));
+  const tPath = join(indexDir, "transcript.jsonl");
+  await writeFile(
+    tPath,
+    [
+      JSON.stringify({
+        type: "user",
+        uuid: "u1",
+        parentUuid: null,
+        promptId: "p1",
+        timestamp: "2026-08-01T10:00:00Z",
+      }),
+      JSON.stringify({ type: "last-prompt", leafUuid: "u1" }),
+    ].join("\n") + "\n",
+  );
+
+  const payload = JSON.stringify({
+    hook_event_name: "UserPromptSubmit",
+    session_id: "s1",
+    transcript_path: tPath,
+    prompt_id: "p_new",
+  });
+
+  const res = spawnSync(HOOK_SHIM, ["--limit=3"], {
+    cwd: repo,
+    input: payload,
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      VCS_RECENT_HISTORY_HOOK_INDEX: join(indexDir, "index.jsonl"),
+    },
+  });
+  expect(res.status).toBe(0);
+  expect(res.stdout).toContain("JJ ops");
 });
