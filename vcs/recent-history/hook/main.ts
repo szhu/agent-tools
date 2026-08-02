@@ -4,6 +4,7 @@ import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { appendIndex, readIndex } from "./index.ts";
 import { parseHookInput, type HookEvent } from "./input.ts";
+import { installHooks, uninstallHooks } from "./install.ts";
 import { findPreviousFireTimestamp } from "./transcript.ts";
 
 function defaultIndexPath(sessionId: string): string {
@@ -121,8 +122,32 @@ async function main() {
   const uninstall = parsed.getBoolean("uninstall");
   const limitStr = parsed.get("limit");
 
-  if (install !== undefined || uninstall) {
-    throw new Error("install/uninstall not implemented yet");
+  if (install !== undefined) {
+    if (install !== "claude-code-global") {
+      throw new Error(`--install target not supported: ${install}`);
+    }
+    const configDir =
+      process.env["CLAUDE_CONFIG_DIR"] ??
+      join(process.env["HOME"] ?? "", ".claude");
+    const scriptAbsPath = join(
+      new URL(".", import.meta.url).pathname,
+      "..",
+      "..",
+      "..",
+      "bin",
+      "vcs-recent-history-hook",
+    );
+    const limit = limitStr === undefined ? 3 : parseInt(String(limitStr), 10);
+    installHooks({ configDir, scriptAbsPath, limit });
+    return;
+  }
+
+  if (uninstall) {
+    const configDir =
+      process.env["CLAUDE_CONFIG_DIR"] ??
+      join(process.env["HOME"] ?? "", ".claude");
+    uninstallHooks({ configDir });
+    return;
   }
 
   const limit = limitStr === undefined ? 3 : parseInt(String(limitStr), 10);

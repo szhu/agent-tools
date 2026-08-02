@@ -5,6 +5,7 @@ import { spawnSync } from "node:child_process";
 import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { appendIndex, readIndex } from "./index.ts";
 import { parseHookInput } from "./input.ts";
+import { HOOK_MARKER, installHooks, uninstallHooks } from "./install.ts";
 import { findPreviousFireTimestamp } from "./transcript.ts";
 
 const HOOK_SHIM = resolve(
@@ -392,4 +393,58 @@ test("PostToolUse above 300ms emits disclaimer", async () => {
   expect(res.stdout).toContain("double checking");
   expect(res.stdout).toContain("additionalContext");
   expect(res.stdout).toContain("(5.0s)");
+});
+
+describe("install / uninstall", () => {
+  test("install writes three events with the marker", async () => {
+    const configDir = await mkdtemp(join(await dir("tmp"), "vcs-inst-"));
+    installHooks({ configDir, scriptAbsPath: "/abs/hook", limit: 3 });
+    const settings = JSON.parse(
+      await readFile(join(configDir, "settings.json"), "utf8"),
+    );
+    for (const event of ["UserPromptSubmit", "PreToolUse", "PostToolUse"]) {
+      const s = JSON.stringify(settings.hooks[event]);
+      expect(s).toContain("/abs/hook");
+      expect(s).toContain(HOOK_MARKER);
+      expect(s).toContain("--limit=3");
+    }
+  });
+
+  test("uninstall removes only entries with our marker", async () => {
+    const configDir = await mkdtemp(join(await dir("tmp"), "vcs-inst-"));
+    await writeFile(
+      join(configDir, "settings.json"),
+      JSON.stringify({
+        hooks: {
+          UserPromptSubmit: [
+            { hooks: [{ type: "command", command: "unrelated-command" }] },
+          ],
+        },
+      }),
+    );
+    installHooks({ configDir, scriptAbsPath: "/abs/hook", limit: 3 });
+    uninstallHooks({ configDir });
+    const settings = JSON.parse(
+      await readFile(join(configDir, "settings.json"), "utf8"),
+    );
+    const remaining = JSON.stringify(settings.hooks.UserPromptSubmit);
+    expect(remaining).toContain("unrelated-command");
+    expect(remaining).not.toContain(HOOK_MARKER);
+  });
+
+  test("install is idempotent", async () => {
+    const configDir = await mkdtemp(join(await dir("tmp"), "vcs-inst-"));
+    installHooks({ configDir, scriptAbsPath: "/abs/hook", limit: 3 });
+    installHooks({ configDir, scriptAbsPath: "/abs/hook", limit: 3 });
+    const settings = JSON.parse(
+      await readFile(join(configDir, "settings.json"), "utf8"),
+    );
+    for (const event of ["UserPromptSubmit", "PreToolUse", "PostToolUse"]) {
+      const entries = settings.hooks[event] as unknown[];
+      const withMarker = entries.filter((e) =>
+        JSON.stringify(e).includes(HOOK_MARKER),
+      );
+      expect(withMarker.length).toBe(1);
+    }
+  });
 });
