@@ -100,21 +100,32 @@ describe("VCS_SUPPORT.jj.readEntries", () => {
   test("strips 'args: ' prefix", async () => {
     const dir = await makeJjRepo();
     const entries = VCS_SUPPORT.jj.readEntries(dir);
-    for (const entry of entries)
-      expect(entry.line.startsWith("args: ")).toBe(false);
+    for (const entry of entries) {
+      // line is now `<opId>  <body>`; the body is what used to be the whole
+      // line, and the `args: ` prefix should still be stripped from it.
+      const body = entry.line.replace(/^[0-9a-f]+ {2}/, "");
+      expect(body.startsWith("args: ")).toBe(false);
+    }
+  });
+
+  test("prefixes each line with a short op id", async () => {
+    const dir = await makeJjRepo();
+    const entries = VCS_SUPPORT.jj.readEntries(dir);
+    for (const entry of entries) expect(entry.line).toMatch(/^[0-9a-f]+ {2}\S/);
   });
 });
 
 // -- VCS_SUPPORT.git.readEntries --
 
 describe("VCS_SUPPORT.git.readEntries", () => {
-  test("returns entries with iso timestamps and HEAD@{N} lines", async () => {
+  test("returns entries with iso timestamps and `<hash>  <subject>` lines", async () => {
     const dir = await makeGitRepo();
     const entries = VCS_SUPPORT.git.readEntries(dir);
     expect(entries.length).toBeGreaterThanOrEqual(2);
     for (const entry of entries) {
       expect(entry.timestamp).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/);
-      expect(entry.line).toMatch(/^HEAD@\{\d+\}:/);
+      expect(entry.line).toMatch(/^[0-9a-f]+ {2}\S/);
+      expect(entry.line).not.toMatch(/HEAD@\{/);
     }
   });
 });
@@ -190,11 +201,11 @@ describe("writeSinceFile", () => {
 // -- filterAndFormat --
 
 const SAMPLE_OPS: HistoryEntry[] = [
-  { timestamp: "2026-08-01T14:22:10", line: "jj squash --into @-" },
-  { timestamp: "2026-08-01T14:21:55", line: "jj new skwysppt" },
-  { timestamp: "2026-08-01T14:21:40", line: 'jj describe -m "..."' },
-  { timestamp: "2026-08-01T14:21:10", line: "jj new" },
-  { timestamp: "2026-08-01T14:21:00", line: "jj new" },
+  { timestamp: "2026-08-01T14:22:10", line: "d2ae7c44  jj squash --into @-" },
+  { timestamp: "2026-08-01T14:21:55", line: "580c84b0  jj new skwysppt" },
+  { timestamp: "2026-08-01T14:21:40", line: 'e12d39f8  jj describe -m "..."' },
+  { timestamp: "2026-08-01T14:21:10", line: "ab3c1122  jj new" },
+  { timestamp: "2026-08-01T14:21:00", line: "1234abcd  jj new" },
 ];
 
 describe("filterAndFormat", () => {
@@ -207,8 +218,10 @@ describe("filterAndFormat", () => {
   test("renders full example with elision", () => {
     const out = filterAndFormat(SAMPLE_OPS, "jj", null, 3);
     expect(out).toContain("Recent JJ ops:");
-    expect(out).toContain("  2026-08-01T14:22:10  jj squash --into @-");
-    expect(out).toContain("2 more ops elided; run `jj op log` to see more.");
+    expect(out).toContain(
+      "  2026-08-01T14:22:10  d2ae7c44  jj squash --into @-",
+    );
+    expect(out).toContain("2 more elided; run `jj op log` to see more.");
   });
 
   test("omits elision line when limit not exceeded", () => {

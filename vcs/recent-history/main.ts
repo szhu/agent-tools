@@ -35,7 +35,7 @@ export const VCS_SUPPORT: Record<Vcs, VcsSupport> = {
       // multi-line content (e.g. a `jj commit -m 'a\nb'` op description) stays
       // inside one record and doesn't split the frame.
       const template =
-        'self.time().end().format("%Y-%m-%dT%H:%M:%S") ++ "\x1F" ++ self.attributes() ++ "\x1F" ++ self.description() ++ "\x1E"';
+        'self.time().end().format("%Y-%m-%dT%H:%M:%S") ++ "\x1F" ++ self.id().short() ++ "\x1F" ++ self.attributes() ++ "\x1F" ++ self.description() ++ "\x1E"';
 
       const res = spawnSync(
         "jj",
@@ -48,18 +48,18 @@ export const VCS_SUPPORT: Record<Vcs, VcsSupport> = {
       const entries: HistoryEntry[] = [];
       for (const raw of res.stdout.split("\x1E")) {
         if (!raw) continue;
-        const [timestamp, attributes, description] = raw.split("\x1F");
+        const [timestamp, opId, attributes, description] = raw.split("\x1F");
         if (!timestamp) continue;
         let field = attributes ?? "";
         if (field.startsWith("args: ")) field = field.slice("args: ".length);
         if (!field) field = description ?? "";
         if (!field) continue;
         const lines = field.split("\n");
-        const line =
+        const body =
           lines.length > 1
             ? `${lines[0]} (${lines.length - 1} more lines elided)`
             : lines[0]!;
-        entries.push({ timestamp, line });
+        entries.push({ timestamp, line: `${opId}  ${body}` });
       }
       return entries;
     },
@@ -76,26 +76,23 @@ export const VCS_SUPPORT: Record<Vcs, VcsSupport> = {
     readEntries(cwd: string): HistoryEntry[] {
       const res = spawnSync(
         "git",
-        ["reflog", "show", "--date=iso-strict", "--format=%gd\t%gs"],
+        ["reflog", "show", "--date=iso-strict", "--format=%gd\t%h\t%gs"],
         { cwd, encoding: "utf8" },
       );
       if (res.status !== 0) throw new Error(`git reflog failed: ${res.stderr}`);
       const entries: HistoryEntry[] = [];
-      let index = 0;
       for (const raw of res.stdout.split("\n")) {
         if (!raw) continue;
-        const tab = raw.indexOf("\t");
-        if (tab < 0) continue;
-        const selector = raw.slice(0, tab);
-        const subject = raw.slice(tab + 1);
-        const match = selector.match(/^(.+?)@\{(.+)\}$/);
+        const parts = raw.split("\t");
+        if (parts.length < 3) continue;
+        const [selector, hash, subject] = parts;
+        const match = selector!.match(/^(.+?)@\{(.+)\}$/);
         if (!match) continue;
-        const [, ref, timestamp] = match;
+        const [, , timestamp] = match;
         entries.push({
           timestamp: timestamp!,
-          line: `${ref}@{${index}}: ${subject}`,
+          line: `${hash}  ${subject}`,
         });
-        index++;
       }
       return entries;
     },
@@ -180,13 +177,6 @@ export function writeSinceFile(path: string, timestamp: string): void {
 // -- Formatting --
 
 /**
- * Picks a word based on count, so "N more <word>" reads naturally.
- */
-function pluralize(singular: string, plural: string, count: number): string {
-  return count === 1 ? singular : plural;
-}
-
-/**
  * Builds the human-visible report for the given ops, applying the lower bound
  * and limit. Returns an empty string when there is nothing to say.
  */
@@ -208,7 +198,7 @@ export function filterAndFormat(
       `Recent ${humanName} ops:`,
       ...shown.map((entry) => `  ${entry.timestamp}  ${entry.line}`),
       elided > 0
-        ? `${elided} more ${pluralize("op", "ops", elided)} elided; run \`${humanOpLogCommand}\` to see more.`
+        ? `${elided} more elided; run \`${humanOpLogCommand}\` to see more.`
         : undefined,
     ]
       .filter((line) => line != null)
