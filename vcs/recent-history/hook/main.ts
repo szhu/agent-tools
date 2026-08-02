@@ -2,10 +2,13 @@ import { ArgsParser, args, exit } from "@cross/utils";
 import { join } from "@std/path";
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
+import { resolveVcs } from "../main.ts";
 import { appendIndex, readIndex } from "./index.ts";
 import { parseHookInput, type HookEvent } from "./input.ts";
 import { installHooks, uninstallHooks } from "./install.ts";
 import { findPreviousFireTimestamp } from "./transcript.ts";
+
+type Vcs = "jj" | "git";
 
 function defaultIndexPath(sessionId: string): string {
   const overridePath = process.env["VCS_RECENT_HISTORY_HOOK_INDEX"];
@@ -15,10 +18,15 @@ function defaultIndexPath(sessionId: string): string {
   return join(configDir, "vcs-recent-history", "index", `${sessionId}.jsonl`);
 }
 
-function runQuery(cwd: string, since: string | null, limit: number): string {
+function runQuery(
+  cwd: string,
+  vcs: Vcs,
+  since: string | null,
+  limit: number,
+): string {
   const here = new URL(".", import.meta.url).pathname;
   const queryShim = join(here, "..", "..", "..", "bin", "vcs-recent-history");
-  const shimArgs: string[] = [`--limit=${limit}`];
+  const shimArgs: string[] = [`--vcs=${vcs}`, `--limit=${limit}`];
   if (since !== null) shimArgs.push(`--since=${since}`);
   const result = spawnSync(queryShim, shimArgs, { cwd, encoding: "utf8" });
   if (result.status !== 0) {
@@ -28,17 +36,11 @@ function runQuery(cwd: string, since: string | null, limit: number): string {
 }
 
 /**
- * Extracts the VCS-native term pair (label + entry noun) from the query CLI's
- * first output line, which currently reads "Recent JJ ops:" or "Recent Git
- * ops:". We use the native tool's vocabulary in agent-facing prose per the
- * plan's terminology rule.
+ * The VCS-native term pair (label + entry noun) used in agent-facing prose per
+ * the plan's terminology rule.
  */
-function vcsTermsFromQueryHeader(header: string): {
-  label: string;
-  entryTerm: string;
-} {
-  if (header.includes("Git"))
-    return { label: "Git", entryTerm: "reflog entries" };
+function vcsTerms(vcs: Vcs): { label: string; entryTerm: string } {
+  if (vcs === "git") return { label: "Git", entryTerm: "reflog entries" };
   return { label: "JJ", entryTerm: "operations" };
 }
 
@@ -82,25 +84,17 @@ function makeFraming(
 
 function emitForEvent(
   event: HookEvent,
+  vcs: Vcs,
   queryOutput: string,
   opts: { baseline: boolean; disclaimerDurationMs: number | null },
 ): void {
-  // Query CLI output shape:
-  //   Recent JJ ops:
-  //     <row>
-  //     ...
-  //   N more elided; run `jj op log` to see more.
-  // Strip the first line (the query CLI header) and replace with our per-event
-  // opening; append the per-event trailer.
-  const newlineIndex = queryOutput.indexOf("\n");
-  const queryHeader =
-    newlineIndex >= 0 ? queryOutput.slice(0, newlineIndex) : queryOutput;
-  const body = newlineIndex >= 0 ? queryOutput.slice(newlineIndex + 1) : "";
-  const { label, entryTerm } = vcsTermsFromQueryHeader(queryHeader);
+  // Query CLI output shape is bare rows plus an elision line — no header, no
+  // indent. Compose our per-event opening + trailer around it directly.
+  const { label, entryTerm } = vcsTerms(vcs);
   const { opening, trailer } = makeFraming(event, label, entryTerm, opts);
 
-  // body already ends with `\n`; add another to separate from the trailer.
-  const finalBody = `${opening}\n${body}\n${trailer}\n`;
+  // queryOutput already ends with `\n`; add another to separate from the trailer.
+  const finalBody = `${opening}\n${queryOutput}\n${trailer}\n`;
 
   if (event === "UserPromptSubmit") {
     process.stdout.write(finalBody);
@@ -153,6 +147,12 @@ async function main() {
   const limit = limitStr === undefined ? 3 : parseInt(String(limitStr), 10);
   const raw = readFileSync(0, "utf8");
   const hook = parseHookInput(raw);
+  const cwd = process.cwd();
+  // Detect the VCS once and pass it explicitly to the query CLI, so the two
+  // can't disagree. Silent if the cwd isn't in a repo — nothing to report.
+  const vcs = resolveVcs(cwd, "detect");
+  if (vcs === null) return;
+
   const currentId = hook.tool_use_id ?? hook.prompt_id;
   const indexPath = defaultIndexPath(hook.session_id);
   const index = readIndex(indexPath);
@@ -162,13 +162,13 @@ async function main() {
     index,
   });
 
-  const body = runQuery(process.cwd(), since, limit);
+  const body = runQuery(cwd, vcs, since, limit);
   if (body !== "") {
     const disclaimerDurationMs =
       hook.hook_event_name === "PostToolUse" && (hook.duration_ms ?? 0) > 300
         ? (hook.duration_ms ?? 0)
         : null;
-    emitForEvent(hook.hook_event_name, body, {
+    emitForEvent(hook.hook_event_name, vcs, body, {
       baseline: since === null,
       disclaimerDurationMs,
     });
