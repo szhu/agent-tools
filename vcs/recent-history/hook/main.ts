@@ -1,8 +1,7 @@
-import { ArgsParser, args, exit } from "@cross/utils";
+import { args, ArgsParser, exit } from "@cross/utils";
 import { join } from "@std/path";
-import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
-import { resolveVcs } from "../main.ts";
+import { filterAndFormat, resolveVcs, VCS_SUPPORT } from "../main.ts";
 import { appendIndex, readIndex } from "./index.ts";
 import { parseHookInput, type HookEvent } from "./input.ts";
 import { installHooks, uninstallHooks } from "./install.ts";
@@ -19,23 +18,6 @@ function defaultIndexPath(sessionId: string): string {
   const home = process.env["HOME"] ?? "";
   const configDir = process.env["CLAUDE_CONFIG_DIR"] ?? join(home, ".claude");
   return join(configDir, "vcs-recent-history", "index", `${sessionId}.jsonl`);
-}
-
-function runQuery(
-  cwd: string,
-  vcs: Vcs,
-  since: string | null,
-  limit: number,
-): string {
-  const here = new URL(".", import.meta.url).pathname;
-  const queryShim = join(here, "..", "..", "..", "bin", "vcs-recent-history");
-  const shimArgs: string[] = [`--vcs=${vcs}`, `--limit=${limit}`];
-  if (since !== null) shimArgs.push(`--since=${since}`);
-  const result = spawnSync(queryShim, shimArgs, { cwd, encoding: "utf8" });
-  if (result.status !== 0) {
-    throw new Error(`vcs-recent-history failed: ${result.stderr}`);
-  }
-  return result.stdout;
 }
 
 /**
@@ -171,7 +153,8 @@ async function main() {
     index,
   });
 
-  const body = runQuery(cwd, vcs, since, limit);
+  const entries = VCS_SUPPORT[vcs].readEntries(cwd);
+  const body = filterAndFormat(entries, vcs, since, limit);
   if (body !== "") {
     const disclaimerDurationMs =
       hook.hook_event_name === "PostToolUse" && (hook.duration_ms ?? 0) > 300
@@ -183,8 +166,14 @@ async function main() {
     });
   }
 
-  if (currentId !== null && currentId !== undefined) {
-    appendIndex(indexPath, currentId, new Date().toISOString());
+  // Anchor the index by the latest op ts we saw, not wall clock. This makes
+  // "since" race-immune: an op that was in the log at fire time — whether or
+  // not this fire emitted it — will not be re-shown; an op that appears in
+  // the log after this fire will land in the next fire's window regardless
+  // of when this fire happened on the wall clock.
+  const latestOpTs = entries[0]?.timestamp ?? null;
+  if (currentId !== null && currentId !== undefined && latestOpTs !== null) {
+    appendIndex(indexPath, currentId, latestOpTs);
   }
 }
 

@@ -316,16 +316,17 @@ describe.skipIf(!E2E)("hook e2e via claude -p", () => {
     const tag = `pre_${Date.now()}`;
     const listener = await startDelayedOpListener({
       cwd: repo,
-      delayMs: 150,
+      delayMs: 300,
       bookmarkName: tag,
     });
     try {
       const events = await runClaudeCollectHookEvents({
         prompt:
-          `Run these two Bash tool calls in order:\n` +
-          `1. \`nc -w1 127.0.0.1 ${listener.port} </dev/null\`\n` +
-          `2. \`date\`\n` +
-          `Then reply exactly: done.`,
+          `Follow these steps in order, and do NOT combine them into fewer Bash calls:\n` +
+          `1. Run Bash: \`nc -w1 127.0.0.1 ${listener.port} </dev/null\`\n` +
+          `2. Between the two Bash tool calls, write a short paragraph (at least 4 sentences) explaining what you just did and what you're about to do. This delay is required for the test — do not skip it.\n` +
+          `3. Run Bash: \`date\`\n` +
+          `4. Reply exactly: done.`,
         cwd: repo,
       });
       const pres = ourEvents(events).filter(
