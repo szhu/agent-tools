@@ -21,6 +21,17 @@ Tools for editing plain-text files as data.
 - `text-grid <file> read|write <range>` — read or write a rectangular slice of an ASCII text file
 - `text/ink.skill.md` — one-shot rendering of an Ink component tree to stdout
 
+### `vcs/`
+
+Tools for working with local version control state.
+
+- `vcs-recent-history` — report recent JJ or Git operations, designed to be wired up as a Claude Code hook. See [vcs/recent-history](vcs/recent-history/README.md).
+- `vcs-recent-history-hook` — installs Claude Code hooks that surface VCS history entries with a transcript-derived watermark; helps the agent attribute changes to its own tool calls vs. external activity. See [vcs/recent-history/hook](vcs/recent-history/hook/README.md).
+
+<details>
+
+<summary>To be implemented</summary>
+
 ### ~~`platforms/`~~ (to be implemented)
 
 ~~One subdirectory per external platform (e.g. `facebook-messenger/`). Each contains whatever is needed to extract or work with that platform's data — userscripts, parsers, format notes.~~
@@ -39,3 +50,5 @@ Tools for editing plain-text files as data.
 ~~`environment-global.md` omits setup instructions (only needs to be done once, out of scope for now).~~
 
 ~~`style-*.md` files cover how things are written — naming, commits, prose, etc.~~
+
+</details>
