@@ -4,7 +4,7 @@ export interface HookInput {
   hook_event_name: HookEvent;
   session_id: string;
   transcript_path: string;
-  prompt_id: string;
+  prompt_id?: string;
   tool_use_id?: string;
   duration_ms?: number;
 }
@@ -28,7 +28,8 @@ export function parseHookInput(raw: string): HookInput {
     hook_event_name: eventName as HookEvent,
     session_id: String(parsed["session_id"] ?? ""),
     transcript_path: String(parsed["transcript_path"] ?? ""),
-    prompt_id: String(parsed["prompt_id"] ?? ""),
+    prompt_id:
+      typeof parsed["prompt_id"] === "string" ? parsed["prompt_id"] : undefined,
     tool_use_id:
       typeof parsed["tool_use_id"] === "string"
         ? parsed["tool_use_id"]

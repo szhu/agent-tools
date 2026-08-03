@@ -6,7 +6,10 @@ import { resolveVcs } from "../main.ts";
 import { appendIndex, readIndex } from "./index.ts";
 import { parseHookInput, type HookEvent } from "./input.ts";
 import { installHooks, uninstallHooks } from "./install.ts";
-import { findPreviousFireTimestamp } from "./transcript.ts";
+import {
+  currentPromptIdFromTranscript,
+  findPreviousFireTimestamp,
+} from "./transcript.ts";
 
 type Vcs = "jj" | "git";
 
@@ -153,7 +156,13 @@ async function main() {
   const vcs = resolveVcs(cwd, "detect");
   if (vcs === null) return;
 
-  const currentId = hook.tool_use_id ?? hook.prompt_id;
+  // `claude -p` omits prompt_id from the UserPromptSubmit hook payload, so
+  // fall back to the transcript's latest user entry's promptId. Keeps the
+  // index keyed by an id the walker will later harvest.
+  const currentId =
+    hook.tool_use_id ??
+    hook.prompt_id ??
+    currentPromptIdFromTranscript(hook.transcript_path);
   const indexPath = defaultIndexPath(hook.session_id);
   const index = readIndex(indexPath);
 
@@ -174,7 +183,9 @@ async function main() {
     });
   }
 
-  appendIndex(indexPath, currentId, new Date().toISOString());
+  if (currentId !== null && currentId !== undefined) {
+    appendIndex(indexPath, currentId, new Date().toISOString());
+  }
 }
 
 if (import.meta.main) {

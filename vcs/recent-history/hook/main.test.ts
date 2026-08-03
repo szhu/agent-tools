@@ -675,3 +675,99 @@ describe("install / uninstall", () => {
     }
   });
 });
+
+// Simulates a 2-turn interactive claude conversation and asserts the walker
+// returns the correct "previous fire" timestamp at each hook fire point.
+// Guards against regressions in walker equivalence between old (parent-chain)
+// and new (reverse-scan) implementations for realistic claude transcript
+// shapes. Turn structure: [user prompt, assistant with tool_use, tool_result]
+// per turn, with a final assistant text after turn 2's tool.
+describe("findPreviousFireTimestamp — 2-turn interactive session", () => {
+  const TRANSCRIPT: object[] = [
+    // Turn 1
+    { type: "user", uuid: "u1", parentUuid: null, promptId: "P1" },
+    {
+      type: "assistant",
+      uuid: "a1",
+      parentUuid: "u1",
+      message: { content: [{ type: "tool_use", id: "T1", name: "Bash" }] },
+    },
+    { type: "user", uuid: "r1", parentUuid: "a1" }, // tool_result carrier
+    // Turn 2
+    { type: "user", uuid: "u2", parentUuid: "r1", promptId: "P2" },
+    {
+      type: "assistant",
+      uuid: "a2",
+      parentUuid: "u2",
+      message: { content: [{ type: "tool_use", id: "T2", name: "Bash" }] },
+    },
+    { type: "user", uuid: "r2", parentUuid: "a2" },
+    {
+      type: "assistant",
+      uuid: "a2f",
+      parentUuid: "r2",
+      message: { content: [] },
+    },
+    { type: "last-prompt", leafUuid: "a2f" },
+  ];
+
+  const cases: Array<{
+    fire: string;
+    indexAtFireTime: Array<[string, string]>;
+    expected: string;
+  }> = [
+    // UPS of Turn 1: nothing written yet
+    { fire: "UPS-1", indexAtFireTime: [], expected: null as unknown as string },
+    // Pre of Turn 1: UPS wrote {P1: t1}
+    { fire: "Pre-1", indexAtFireTime: [["P1", "t1"]], expected: "t1" },
+    // Post of Turn 1: Pre wrote {T1: t2}
+    {
+      fire: "Post-1",
+      indexAtFireTime: [
+        ["P1", "t1"],
+        ["T1", "t2"],
+      ],
+      expected: "t2",
+    },
+    // UPS of Turn 2: Post-1 clobbered {T1: t3}
+    {
+      fire: "UPS-2",
+      indexAtFireTime: [
+        ["P1", "t1"],
+        ["T1", "t3"],
+      ],
+      expected: "t3",
+    },
+    // Pre of Turn 2: UPS-2 wrote {P2: t4}
+    {
+      fire: "Pre-2",
+      indexAtFireTime: [
+        ["P1", "t1"],
+        ["T1", "t3"],
+        ["P2", "t4"],
+      ],
+      expected: "t4",
+    },
+    // Post of Turn 2: Pre-2 wrote {T2: t5}
+    {
+      fire: "Post-2",
+      indexAtFireTime: [
+        ["P1", "t1"],
+        ["T1", "t3"],
+        ["P2", "t4"],
+        ["T2", "t5"],
+      ],
+      expected: "t5",
+    },
+  ];
+
+  for (const c of cases) {
+    test(`${c.fire}: walker returns ${c.expected ?? "null"}`, async () => {
+      const path = await writeTranscript(TRANSCRIPT);
+      const index = new Map<string, string>(c.indexAtFireTime);
+      expect(findPreviousFireTimestamp({ transcriptPath: path, index })).toBe(
+        c.expected,
+      );
+    });
+  }
+});

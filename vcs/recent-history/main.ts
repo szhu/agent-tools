@@ -30,8 +30,11 @@ export const VCS_SUPPORT: Record<Vcs, VcsSupport> = {
       // Fields are separated by US (0x1F) and records by RS (0x1E) so
       // multi-line content (e.g. a `jj commit -m 'a\nb'` op description) stays
       // inside one record and doesn't split the frame.
+      // Include ms + tz offset. Without ms, ops that land in the same second
+      // as a hook fire's ts get filtered out by the "since" bound (which does
+      // carry ms), missing legitimate ops that happened after the fire.
       const template =
-        'self.time().end().format("%Y-%m-%dT%H:%M:%S") ++ "\x1F" ++ self.id().short() ++ "\x1F" ++ self.attributes() ++ "\x1F" ++ self.description() ++ "\x1E"';
+        'self.time().end().format("%Y-%m-%dT%H:%M:%S%.3f%:z") ++ "\x1F" ++ self.id().short() ++ "\x1F" ++ self.attributes() ++ "\x1F" ++ self.description() ++ "\x1E"';
 
       const res = spawnSync(
         "jj",

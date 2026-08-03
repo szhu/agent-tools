@@ -38,9 +38,36 @@ function harvestIds(entry: Entry): string[] {
 }
 
 /**
- * Walks the transcript backward from the current active leaf, harvests
- * promptIds and tool_use ids from each ancestor, and returns the first
- * matching index entry's timestamp.
+ * Reads the transcript and returns the `promptId` of the latest `user` entry,
+ * or null if none can be resolved. `claude -p` doesn't include `prompt_id` in
+ * the UserPromptSubmit hook payload, so the hook falls back to this to keep
+ * the index keyed by the same id the walker will later harvest.
+ */
+export function currentPromptIdFromTranscript(
+  transcriptPath: string,
+): string | null {
+  let text: string;
+  try {
+    text = readFileSync(transcriptPath, "utf8");
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw e;
+  }
+  const lines = text.split("\n");
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i]!;
+    if (!line || !line.includes('"type":"user"')) continue;
+    const parsed = JSON.parse(line) as { type?: string; promptId?: string };
+    if (parsed.type === "user" && typeof parsed.promptId === "string") {
+      return parsed.promptId;
+    }
+  }
+  return null;
+}
+
+/**
+ * Walks the transcript backward, harvests promptIds and tool_use ids from each
+ * user/assistant entry, and returns the first matching index entry's timestamp.
  *
  * No exclusion of "the current fire's id" is needed: the caller writes to the
  * index AFTER this function returns, so no entry from the current fire can
@@ -62,32 +89,28 @@ export function findPreviousFireTimestamp(opts: {
     if ((e as NodeJS.ErrnoException).code === "ENOENT") return null;
     throw e;
   }
+  // Reverse-scan every user/assistant entry, harvest ids, return the first
+  // index hit. This intentionally does NOT follow the `last-prompt` anchor:
+  // in `claude -p`, `last-prompt` can lag behind the physical tail (e.g. it
+  // still points at a pre-tool-use leaf while PostToolUse fires), which
+  // would cut the walker off before the assistant entry containing the
+  // current tool_use id.
   const lines = text.split("\n");
-  // First pass: reverse-scan for the latest last-prompt entry.
-  let targetUuid: string | null = null;
-  for (let i = lines.length - 1; i >= 0; i--) {
-    const line = lines[i]!;
-    if (!line || !line.includes('"type":"last-prompt"')) continue;
-    const parsed = JSON.parse(line) as LastPromptEntry;
-    targetUuid = parsed.leafUuid;
-    break;
-  }
-  if (targetUuid === null) return null;
-  // Second pass: walk the parent chain, harvesting ids.
   for (let i = lines.length - 1; i >= 0; i--) {
     const line = lines[i]!;
     if (!line) continue;
-    if (!line.includes(`"uuid":"${targetUuid}"`)) continue;
-    const parsed = JSON.parse(line) as Entry;
+    if (!line.includes('"type":"user"') && !line.includes('"type":"assistant"'))
+      continue;
+    let parsed: Entry;
+    try {
+      parsed = JSON.parse(line) as Entry;
+    } catch {
+      continue;
+    }
     for (const id of harvestIds(parsed)) {
       const hit = opts.index.get(id);
       if (hit !== undefined) return hit;
     }
-    const parent = (parsed as UserEntry | AssistantEntry).parentUuid ?? null;
-    if (parent === null) return null;
-    targetUuid = parent;
-    // Restart scan from the tail — cheap in practice; refined later if needed.
-    i = lines.length;
   }
   return null;
 }
