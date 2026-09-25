@@ -2,6 +2,7 @@
   "jsonRecursiveSort": true,
   "plugins": [
     "prettier-plugin-organize-imports",
+    "prettier-plugin-jsdoc",
     "prettier-plugin-packagejson",
     "prettier-plugin-sort-json"
   ],
