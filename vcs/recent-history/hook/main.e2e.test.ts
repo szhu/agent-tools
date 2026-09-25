@@ -41,9 +41,8 @@ const CLAUDE_BIN =
  * absolute path, rooted at /tmp. Stable across runs so the per-config-dir
  * keychain entry created by `/login` persists.
  *
- * First-time setup on a machine: run
- *   `CLAUDE_CONFIG_DIR=<returned path> claude /login`
- * once. After that, subsequent test runs auth automatically.
+ * First-time setup on a machine: run `CLAUDE_CONFIG_DIR=<returned path> claude
+ * /login` once. After that, subsequent test runs auth automatically.
  */
 function scratchClaudeConfigDir(): string {
   // Matches claude's own convention for `~/.claude/projects/` dir names:
@@ -52,11 +51,11 @@ function scratchClaudeConfigDir(): string {
 }
 
 /**
- * Idempotent: just creates the scratch cfg dir. Empty by design — nothing
- * from real ~/.claude/ is copied or linked in, so user's plugins, CLAUDE.md,
- * agents, skills, hooks, etc. don't leak into the test. `--settings` inline
- * contributes the only hooks; auth comes from the per-config-dir keychain
- * entry created by a one-time `claude auth login` at this path.
+ * Idempotent: just creates the scratch cfg dir. Empty by design — nothing from
+ * real ~/.claude/ is copied or linked in, so user's plugins, CLAUDE.md, agents,
+ * skills, hooks, etc. don't leak into the test. `--settings` inline contributes
+ * the only hooks; auth comes from the per-config-dir keychain entry created by
+ * a one-time `claude auth login` at this path.
  */
 function ensureScratchClaudeCfg(): string {
   const cfg = scratchClaudeConfigDir();
@@ -85,14 +84,14 @@ async function makeScratchJjRepo(): Promise<string> {
 }
 
 /**
- * Listens on an ephemeral port; on the first connection, waits `delayMs`,
- * then runs `jj bookmark create <bookmarkName> -r @` in `cwd`. Returns the
- * chosen port and a stop() function.
+ * Listens on an ephemeral port; on the first connection, waits `delayMs`, then
+ * runs `jj bookmark create <bookmarkName> -r @` in `cwd`. Returns the chosen
+ * port and a stop() function.
  *
- * The delay is the whole point: the trigger Bash tool call returns as soon
- * as its `nc` client closes the connection, so the op fires during the
- * "no tool call active" window that follows — exactly where the next Bash's
- * PreToolUse expects to find it.
+ * The delay is the whole point: the trigger Bash tool call returns as soon as
+ * its `nc` client closes the connection, so the op fires during the "no tool
+ * call active" window that follows — exactly where the next Bash's PreToolUse
+ * expects to find it.
  */
 async function startDelayedOpListener(opts: {
   cwd: string;
@@ -265,9 +264,8 @@ function additionalContext(event: HookResponseEvent): string {
 /**
  * Filters hook_response events to those coming from OUR hook, i.e. whose
  * additionalContext is non-empty AND contains the "JJ operations" phrase we
- * emit. Other hooks (statusbar, sound, etc.) also produce hook_response
- * events; skipping them keeps assertions from tripping over unrelated
- * envelopes.
+ * emit. Other hooks (statusbar, sound, etc.) also produce hook_response events;
+ * skipping them keeps assertions from tripping over unrelated envelopes.
  */
 function ourEvents(events: HookResponseEvent[]): HookResponseEvent[] {
   return events.filter((event) => {

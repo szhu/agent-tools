@@ -24,7 +24,8 @@ export const VCS_SUPPORT: Record<Vcs, VcsSupport> = {
     isPresentCommand: ["jj", "workspace", "root"],
 
     /**
-     * The jj repo's operation log, newest first, one HistoryEntry per operation.
+     * The jj repo's operation log, newest first, one HistoryEntry per
+     * operation.
      */
     readEntries(cwd: string) {
       // Fields are separated by US (0x1F) and records by RS (0x1E) so
@@ -68,9 +69,7 @@ export const VCS_SUPPORT: Record<Vcs, VcsSupport> = {
     humanOpLogCommand: "git reflog",
     isPresentCommand: ["git", "rev-parse", "--show-toplevel"],
 
-    /**
-     * The git repo's reflog, newest first, one HistoryEntry per entry.
-     */
+    /** The git repo's reflog, newest first, one HistoryEntry per entry. */
     readEntries(cwd: string): HistoryEntry[] {
       const res = spawnSync(
         "git",
@@ -97,9 +96,7 @@ export const VCS_SUPPORT: Record<Vcs, VcsSupport> = {
   },
 };
 
-/**
- * Whether `cwd` is inside a repo of the given VCS.
- */
+/** Whether `cwd` is inside a repo of the given VCS. */
 function isVcsPresent(cwd: string, vcs: Vcs): boolean {
   const [command, ...commandArgs] = VCS_SUPPORT[vcs].isPresentCommand;
   const result = spawnSync(command!, commandArgs, { cwd, stdio: "ignore" });
@@ -108,8 +105,8 @@ function isVcsPresent(cwd: string, vcs: Vcs): boolean {
 
 /**
  * Resolves which VCS to use at `cwd`. When `requested` is "detect", tries jj
- * first, then git. When "jj" or "git", checks only that one. Returns null
- * when no candidate is present.
+ * first, then git. When "jj" or "git", checks only that one. Returns null when
+ * no candidate is present.
  */
 export function resolveVcs(
   cwd: string,
@@ -192,9 +189,7 @@ function parseIntStrict(s: string, flag: string): number {
   return parseInt(s, 10);
 }
 
-/**
- * Entry point: reads the VCS history and prints the report.
- */
+/** Entry point: reads the VCS history and prints the report. */
 async function main() {
   const parsed = new ArgsParser(args(), {});
   const since = parsed.get("since");

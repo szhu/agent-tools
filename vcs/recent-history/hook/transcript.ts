@@ -40,8 +40,8 @@ function harvestIds(entry: Entry): string[] {
 /**
  * Reads the transcript and returns the `promptId` of the latest `user` entry,
  * or null if none can be resolved. `claude -p` doesn't include `prompt_id` in
- * the UserPromptSubmit hook payload, so the hook falls back to this to keep
- * the index keyed by the same id the walker will later harvest.
+ * the UserPromptSubmit hook payload, so the hook falls back to this to keep the
+ * index keyed by the same id the walker will later harvest.
  */
 export function currentPromptIdFromTranscript(
   transcriptPath: string,
@@ -67,7 +67,8 @@ export function currentPromptIdFromTranscript(
 
 /**
  * Walks the transcript backward, harvests promptIds and tool_use ids from each
- * user/assistant entry, and returns the first matching index entry's timestamp.
+ * user/assistant entry, and returns the first matching index entry's
+ * timestamp.
  *
  * No exclusion of "the current fire's id" is needed: the caller writes to the
  * index AFTER this function returns, so no entry from the current fire can
