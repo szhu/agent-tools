@@ -207,13 +207,17 @@ async function runClaudeCollectHookEvents(opts: {
       rejectExit(e);
     });
   });
-  // Auth-failure surface: `claude -p` prints "Not logged in" and exits ~0
-  // when the scratch cfg dir doesn't have a keychain entry yet. Detect that
-  // and throw with the exact one-time-setup command, so a fresh dev checkout
+  // Auth-failure surface: `claude -p` prints one of a few messages and
+  // exits ~0 when the scratch cfg dir has no keychain entry ("Not logged
+  // in"), or has one that's stale and can't be refreshed ("Failed to
+  // authenticate" / "OAuth session expired"). Detect any of these and throw
+  // with the exact one-time-setup command, so a fresh or stale dev checkout
   // doesn't get a cryptic `withTag: undefined` failure.
-  if (/Not logged in/i.test(stdout) || /Not logged in/i.test(stderr)) {
+  const authFailure =
+    /Not logged in|Failed to authenticate|OAuth session expired/i;
+  if (authFailure.test(stdout) || authFailure.test(stderr)) {
     throw new Error(
-      `claude -p reported "Not logged in" for scratch CLAUDE_CONFIG_DIR.\n` +
+      `claude -p reported an auth failure for scratch CLAUDE_CONFIG_DIR.\n` +
         `\n` +
         `One-time setup — run this in your terminal:\n` +
         `\n` +
