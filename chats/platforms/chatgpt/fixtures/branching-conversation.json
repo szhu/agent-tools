@@ -1,0 +1,69 @@
+{
+  "create_time": 1700000000,
+  "current_node": "msg-3",
+  "mapping": {
+    "msg-1": {
+      "children": ["msg-2", "msg-2-regen"],
+      "id": "msg-1",
+      "message": {
+        "author": { "role": "user" },
+        "content": {
+          "content_type": "text",
+          "parts": ["What can I make with rice and eggs?"]
+        },
+        "create_time": 1700000010
+      },
+      "parent": "root"
+    },
+    "msg-2": {
+      "children": ["msg-3"],
+      "id": "msg-2",
+      "message": {
+        "author": { "role": "assistant" },
+        "content": {
+          "content_type": "text",
+          "parts": ["Fried rice is a great option."]
+        },
+        "create_time": 1700000060
+      },
+      "parent": "msg-1"
+    },
+    "msg-2-regen": {
+      "children": [],
+      "id": "msg-2-regen",
+      "message": {
+        "author": { "role": "assistant" },
+        "content": {
+          "content_type": "text",
+          "parts": ["This is a dead regeneration branch and should not appear."]
+        },
+        "create_time": 1700000050
+      },
+      "parent": "msg-1"
+    },
+    "msg-3": {
+      "children": [],
+      "id": "msg-3",
+      "message": {
+        "author": { "role": "user" },
+        "content": {
+          "content_type": "text",
+          "parts": [
+            "Any tips for making it less greasy?",
+            "Also, what sides go well with it?"
+          ]
+        },
+        "create_time": 1700000300
+      },
+      "parent": "msg-2"
+    },
+    "root": {
+      "children": ["msg-1"],
+      "id": "root",
+      "message": null,
+      "parent": null
+    }
+  },
+  "title": "Recipe Ideas",
+  "update_time": 1700000300
+}
