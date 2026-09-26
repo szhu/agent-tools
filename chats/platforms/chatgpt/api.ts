@@ -58,6 +58,22 @@ const MAX_RATE_LIMIT_RETRIES = 4;
 // hundreds of conversations.
 const REQUEST_DELAY_MS = 400;
 
+/**
+ * Extracts a human-readable message from an error response body. `detail`
+ * is usually a string, but some endpoints (e.g. a 404 for an inaccessible
+ * conversation) return a structured object instead — stringify it rather
+ * than let `${}` coerce it to the useless "[object Object]".
+ */
+export function formatErrorDetail(json: unknown, fallbackText: string): string {
+  const rawDetail =
+    json && typeof json === "object" && "detail" in json
+      ? json.detail
+      : undefined;
+  if (typeof rawDetail === "string") return rawDetail;
+  if (rawDetail !== undefined) return JSON.stringify(rawDetail);
+  return fallbackText;
+}
+
 export async function fetchJson(
   url: string,
   creds: Credentials,
@@ -94,10 +110,7 @@ export async function fetchJson(
       );
     }
     if (!res.ok) {
-      const detail =
-        json && typeof json === "object" && "detail" in json
-          ? String(json.detail)
-          : text;
+      const detail = formatErrorDetail(json, text);
       const hint =
         res.status === 401
           ? " Your saved credentials likely expired — run with --login again."
