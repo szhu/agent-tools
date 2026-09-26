@@ -117,10 +117,10 @@ export interface ConversationsPage {
 }
 
 /**
- * Fetches exactly one page of the conversation list — no internal pagination.
- * Each invocation of the CLI is meant to do one bounded unit of work; a caller
- * that wants to walk further pages does so across separate invocations, driven
- * by `offset`.
+ * Fetches exactly one page of the default (no-project) conversation list — no
+ * internal pagination. Each invocation of the CLI is meant to do one bounded
+ * unit of work; a caller that wants to walk further pages does so across
+ * separate invocations, driven by `offset`.
  */
 export async function fetchConversationsPage(
   creds: Credentials,
@@ -159,4 +159,78 @@ export async function fetchConversationDetail(
     `https://chatgpt.com/backend-api/conversation/${id}`,
     creds,
   )) as ConversationDetail;
+}
+
+export interface CursorPage<T> {
+  items: T[];
+  cursor: string | null;
+}
+
+export interface ProjectSummary {
+  id: string;
+  title: string;
+  create_time: string;
+}
+
+/**
+ * Projects are a distinct gizmo subtype (id prefix `g-p-`) exposed through this
+ * "snorlax" sidebar endpoint. Cursor-paginated only — offset/limit aren't
+ * supported here (confirmed: passing offset returns the same page every time
+ * rather than erroring).
+ */
+export async function fetchProjectsPage(
+  creds: Credentials,
+  cursor?: string,
+  limit?: number,
+): Promise<CursorPage<ProjectSummary>> {
+  const params = new URLSearchParams();
+  if (cursor !== undefined) params.set("cursor", cursor);
+  if (limit !== undefined) params.set("limit", String(limit));
+  const json = (await fetchJson(
+    `https://chatgpt.com/backend-api/gizmos/snorlax/sidebar?${params}`,
+    creds,
+  )) as {
+    items: {
+      gizmo: { id: string; display: { name: string }; created_at: string };
+    }[];
+    cursor: string | null;
+  };
+  return {
+    items: json.items.map((it) => ({
+      id: it.gizmo.id,
+      title: it.gizmo.display.name,
+      create_time: it.gizmo.created_at,
+    })),
+    cursor: json.cursor,
+  };
+}
+
+/**
+ * A project's conversation list, same cursor-only pagination as
+ * fetchProjectsPage. Unlike fetchConversationsPage, there's no `total`.
+ */
+export async function fetchProjectConversationsPage(
+  creds: Credentials,
+  projectId: string,
+  cursor?: string,
+  limit?: number,
+): Promise<CursorPage<ConversationSummary>> {
+  const params = new URLSearchParams();
+  if (cursor !== undefined) params.set("cursor", cursor);
+  if (limit !== undefined) params.set("limit", String(limit));
+  const json = (await fetchJson(
+    `https://chatgpt.com/backend-api/gizmos/${projectId}/conversations?${params}`,
+    creds,
+  )) as {
+    items: { id: string; title: string; update_time: string }[];
+    cursor: string | null;
+  };
+  return {
+    items: json.items.map((it) => ({
+      id: it.id,
+      title: it.title,
+      update_time: it.update_time,
+    })),
+    cursor: json.cursor,
+  };
 }

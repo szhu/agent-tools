@@ -89,6 +89,23 @@ export function toMarkdown(
   return lines.join("\n");
 }
 
+function slugify(title: string): string {
+  return title
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 60);
+}
+
+function timestampPrefix(date: Date): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return (
+    `${date.getUTCFullYear()}${pad(date.getUTCMonth() + 1)}${pad(date.getUTCDate())}` +
+    `-${pad(date.getUTCHours())}${pad(date.getUTCMinutes())}`
+  );
+}
+
 /**
  * Filenames embed an 8-char id prefix so a cache lookup for a given id can be
  * done by listing the directory and matching filenames — no need to open and
@@ -99,17 +116,24 @@ export function conversationFilename(
   createTimeSeconds: number,
   title: string,
 ): string {
-  const slug = title
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 60);
-  const date = new Date(createTimeSeconds * 1000);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  const stamp =
-    `${date.getUTCFullYear()}${pad(date.getUTCMonth() + 1)}${pad(date.getUTCDate())}` +
-    `-${pad(date.getUTCHours())}${pad(date.getUTCMinutes())}`;
+  const stamp = timestampPrefix(new Date(createTimeSeconds * 1000));
   const idPrefix = id.slice(0, 8);
+  const slug = slugify(title);
   return `${stamp}-${idPrefix}${slug ? `-${slug}` : ""}.md`;
+}
+
+/**
+ * Same scheme as conversationFilename, but project ids all share a "g-p-"
+ * prefix that adds no disambiguating value — stripped before taking the 8-char
+ * id slice so the prefix carries real entropy.
+ */
+export function projectListCacheFilename(
+  id: string,
+  createTimeIso: string,
+  title: string,
+): string {
+  const stamp = timestampPrefix(new Date(createTimeIso));
+  const idPrefix = id.replace(/^g-p-/, "").slice(0, 8);
+  const slug = slugify(title);
+  return `${stamp}-${idPrefix}${slug ? `-${slug}` : ""}.jsonl`;
 }

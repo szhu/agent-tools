@@ -6,8 +6,16 @@ import {
   readFile,
   writeFile,
 } from "node:fs/promises";
-import type { ConversationDetail, ConversationSummary } from "./api.ts";
-import { conversationFilename, toMarkdown } from "./markdown.ts";
+import type {
+  ConversationDetail,
+  ConversationSummary,
+  ProjectSummary,
+} from "./api.ts";
+import {
+  conversationFilename,
+  projectListCacheFilename,
+  toMarkdown,
+} from "./markdown.ts";
 
 // Conversation files use the same Markdown format printed to stdout, so the
 // cache dir is a browsable export directory, not an opaque internal store.
@@ -85,10 +93,15 @@ export interface ListCacheEntry {
   next_update_time: string | null;
 }
 
-const LIST_CACHE_FILENAME = "conversations.jsonl";
+const DEFAULT_LIST_CACHE_FILENAME = "default.jsonl";
 
-export function listCachePath(cacheDir: string): string {
-  return join(cacheDir, LIST_CACHE_FILENAME);
+/**
+ * Each project (and the no-project default) is its own independent
+ * update_time-ordered sequence with its own gaps, so each gets its own file
+ * under projects/ rather than one shared log across all of them.
+ */
+export function listCachePath(cacheDir: string, filename?: string): string {
+  return join(cacheDir, "projects", filename ?? DEFAULT_LIST_CACHE_FILENAME);
 }
 
 /**
@@ -97,11 +110,12 @@ export function listCachePath(cacheDir: string): string {
  */
 export async function readListCache(
   cacheDir: string,
+  filename?: string,
 ): Promise<Map<string, ListCacheEntry>> {
   const map = new Map<string, ListCacheEntry>();
   let text: string;
   try {
-    text = await readFile(listCachePath(cacheDir), "utf-8");
+    text = await readFile(listCachePath(cacheDir, filename), "utf-8");
   } catch {
     return map;
   }
@@ -128,9 +142,11 @@ export async function appendListCachePage(
   cacheDir: string,
   items: ConversationSummary[],
   fetchedAt: Date,
+  filename?: string,
 ): Promise<void> {
   if (items.length === 0) return;
-  await mkdir(cacheDir, { recursive: true });
+  const path = listCachePath(cacheDir, filename);
+  await mkdir(join(cacheDir, "projects"), { recursive: true });
   const fetchedAtIso = fetchedAt.toISOString();
   const lines = items.map((item, i) => {
     const entry: ListCacheEntry = {
@@ -143,7 +159,7 @@ export async function appendListCachePage(
     };
     return JSON.stringify(entry);
   });
-  await appendFile(listCachePath(cacheDir), lines.join("\n") + "\n");
+  await appendFile(path, lines.join("\n") + "\n");
 }
 
 /**
@@ -161,4 +177,64 @@ export function isVerifiedAdjacent(
     newer.next_update_time === older.update_time ||
     older.prev_update_time === newer.update_time
   );
+}
+
+// The project index maps a project id to the list-cache filename computed
+// for it (see projectListCacheFilename) — computing that filename requires
+// the project's title and create_time, which only list-projects fetches.
+// list-conversations --project reads this instead of re-fetching that
+// metadata, so a project's list cache always lands at one consistent path.
+
+const PROJECT_INDEX_FILENAME = "index.jsonl";
+
+interface ProjectIndexEntry {
+  id: string;
+  filename: string;
+}
+
+function projectIndexPath(cacheDir: string): string {
+  return join(cacheDir, "projects", PROJECT_INDEX_FILENAME);
+}
+
+export async function readProjectIndex(
+  cacheDir: string,
+): Promise<Map<string, string>> {
+  const map = new Map<string, string>();
+  let text: string;
+  try {
+    text = await readFile(projectIndexPath(cacheDir), "utf-8");
+  } catch {
+    return map;
+  }
+  for (const line of text.split("\n")) {
+    if (!line.trim()) continue;
+    let entry: ProjectIndexEntry;
+    try {
+      entry = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    map.set(entry.id, entry.filename);
+  }
+  return map;
+}
+
+export async function appendProjectIndex(
+  cacheDir: string,
+  projects: ProjectSummary[],
+): Promise<void> {
+  if (projects.length === 0) return;
+  await mkdir(join(cacheDir, "projects"), { recursive: true });
+  const lines = projects.map((project) => {
+    const entry: ProjectIndexEntry = {
+      id: project.id,
+      filename: projectListCacheFilename(
+        project.id,
+        project.create_time,
+        project.title,
+      ),
+    };
+    return JSON.stringify(entry);
+  });
+  await appendFile(projectIndexPath(cacheDir), lines.join("\n") + "\n");
 }

@@ -2,7 +2,12 @@ import { join } from "@std/path";
 import { describe, expect, test } from "bun:test";
 import { readFile } from "node:fs/promises";
 import type { ConversationDetail, ConversationNode } from "./api.ts";
-import { activeMessagePath, toMarkdown } from "./markdown.ts";
+import {
+  activeMessagePath,
+  conversationFilename,
+  projectListCacheFilename,
+  toMarkdown,
+} from "./markdown.ts";
 
 const fixturePath = join(
   import.meta.dirname,
@@ -78,5 +83,45 @@ describe("toMarkdown", () => {
     const detail = await loadFixture();
     const markdown = toMarkdown("conv-123", detail, FIXED_FETCHED_AT);
     expect(markdown).toContain("Some people also swap in cauliflower rice.");
+  });
+});
+
+describe("conversationFilename", () => {
+  const createTimeSeconds = 1788592492; // 2026-09-05T07:14:52Z
+
+  test("embeds a UTC timestamp, 8-char id prefix, and slugified title", () => {
+    const name = conversationFilename(
+      "6a9bc11b-08cc-83ea-bd0b-c29770f76b6e",
+      createTimeSeconds,
+      "Shop iPhone Battery Cases",
+    );
+    expect(name).toBe("20260905-0714-6a9bc11b-shop-iphone-battery-cases.md");
+  });
+
+  test("omits the trailing slug segment for an empty title", () => {
+    const name = conversationFilename("6a9bc11b08cc", createTimeSeconds, "");
+    expect(name).toBe("20260905-0714-6a9bc11b.md");
+  });
+});
+
+describe("projectListCacheFilename", () => {
+  const createTimeIso = "2026-01-13T07:35:17.539544+00:00";
+
+  test("strips the g-p- prefix before taking the 8-char id slice", () => {
+    const name = projectListCacheFilename(
+      "g-p-6965f5b58a1c8191b633b65508062fed",
+      createTimeIso,
+      "Portfolio",
+    );
+    expect(name).toBe("20260113-0735-6965f5b5-portfolio.jsonl");
+  });
+
+  test("omits the trailing slug segment for an empty title", () => {
+    const name = projectListCacheFilename(
+      "g-p-6965f5b58a1c8191b633b65508062fed",
+      createTimeIso,
+      "",
+    );
+    expect(name).toBe("20260113-0735-6965f5b5.jsonl");
   });
 });
