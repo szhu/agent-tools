@@ -8,6 +8,7 @@
     "@cross/dir": "npm:@jsr/cross__dir",
     "@cross/env": "npm:@jsr/cross__env",
     "@cross/utils": "npm:@jsr/cross__utils",
+    "@napi-rs/keyring": "^2.1.0",
     "@std/path": "npm:@jsr/std__path"
   },
   "devDependencies": {

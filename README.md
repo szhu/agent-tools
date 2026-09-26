@@ -6,13 +6,14 @@ A centralized repo for translating between formats that agents and humans work w
 
 ### `chats/`
 
-Tools for working with Claude Code chat history stored in `~/.claude/projects/`.
+Tools for working with chat history across platforms.
 
-- `claude-chats ls [project[:chat]]` — list projects, chats, or messages with sorting and filtering
+- `claude-chats ls [project[:chat]]` — list Claude Code projects, chats, or messages with sorting and filtering (`~/.claude/projects/`)
 - `claude-chats rename <chat> <title>` — rename a chat
 - `claude-chats mv <chat> <project>` — move a chat to another project
 - ~~Moving a project moves its chats and VS Code workspace state together.~~ (to be implemented)
 - ~~Build on [claude-code-history-exporter](https://github.com/szhu/claude-code-history-exporter).~~ (to be implemented)
+- `chatgpt-access` — pull and locally cache ChatGPT conversations and projects. See [chats/platforms/chatgpt](chats/platforms/chatgpt/README.md).
 
 ### `text/`
 
