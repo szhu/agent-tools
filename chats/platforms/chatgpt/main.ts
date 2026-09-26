@@ -21,11 +21,12 @@ import {
 } from "./cache.ts";
 import { toMarkdown } from "./markdown.ts";
 
-function parseDurationMs(input: string): number {
+export function parseDurationMs(input: string): number {
+  if (input === "0") return 0; // bare 0 means "never fresh", no unit needed
   const match = input.match(/^(\d+)(ms|s|m|h|d)$/);
   if (!match || !match[1] || !match[2]) {
     throw new Error(
-      `Invalid duration '${input}'. Use a number followed by ms, s, m, h, or d (e.g. 24h).`,
+      `Invalid duration '${input}'. Use a number followed by ms, s, m, h, or d (e.g. 24h), or 0.`,
     );
   }
   const value = Number(match[1]);
