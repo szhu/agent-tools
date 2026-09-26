@@ -19,10 +19,15 @@ import {
 
 // Conversation files use the same Markdown format printed to stdout, so the
 // cache dir is a browsable export directory, not an opaque internal store.
+// They live under conversations/, as a peer of projects/ (the list cache).
 
 export interface CachedConversation {
   path: string;
   fetchedAt: Date;
+}
+
+function conversationsDir(cacheDir: string): string {
+  return join(cacheDir, "conversations");
 }
 
 /**
@@ -35,9 +40,10 @@ export async function findCachedConversation(
   id: string,
 ): Promise<CachedConversation | null> {
   const idPrefix = id.slice(0, 8);
+  const dir = conversationsDir(cacheDir);
   let entries: string[];
   try {
-    entries = await readdir(cacheDir);
+    entries = await readdir(dir);
   } catch {
     return null;
   }
@@ -45,7 +51,7 @@ export async function findCachedConversation(
     (name) => name.endsWith(".md") && name.includes(idPrefix),
   );
   if (!match) return null;
-  const path = join(cacheDir, match);
+  const path = join(dir, match);
   const content = await readFile(path, "utf-8");
   const fetchedAtMatch = content.match(/^fetched_at: (.+)$/m);
   if (!fetchedAtMatch || !fetchedAtMatch[1]) return null;
@@ -62,10 +68,11 @@ export async function writeCachedConversation(
   detail: ConversationDetail,
   fetchedAt: Date,
 ): Promise<string> {
-  await mkdir(cacheDir, { recursive: true });
+  const dir = conversationsDir(cacheDir);
+  await mkdir(dir, { recursive: true });
   const markdown = toMarkdown(id, detail, fetchedAt);
   const filename = conversationFilename(id, detail.create_time, detail.title);
-  const path = join(cacheDir, filename);
+  const path = join(dir, filename);
   await writeFile(path, markdown);
   return markdown;
 }

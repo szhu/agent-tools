@@ -49,6 +49,18 @@ describe("toMarkdown", () => {
     expect(markdown).toContain("fetched_at: 2026-01-01T00:00:00.000Z\n");
   });
 
+  test("omits project_id when gizmo_id is null (no project)", async () => {
+    const detail = await loadFixture();
+    const markdown = toMarkdown("conv-123", detail, FIXED_FETCHED_AT);
+    expect(markdown).not.toContain("project_id:");
+  });
+
+  test("includes project_id when gizmo_id is set", async () => {
+    const detail = { ...(await loadFixture()), gizmo_id: "g-p-abc123" };
+    const markdown = toMarkdown("conv-123", detail, FIXED_FETCHED_AT);
+    expect(markdown).toContain("project_id: g-p-abc123\n");
+  });
+
   test("excludes the dead regeneration branch", async () => {
     const detail = await loadFixture();
     const markdown = toMarkdown("conv-123", detail, FIXED_FETCHED_AT);

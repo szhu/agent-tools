@@ -32,6 +32,7 @@ export interface ConversationDetail {
   update_time: number;
   current_node: string;
   mapping: Record<string, ConversationNode>;
+  gizmo_id: string | null;
 }
 
 // A plain fetch, no browser: a Bearer token + cookie from an

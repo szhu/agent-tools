@@ -69,6 +69,7 @@ export function toMarkdown(
     `create_time: ${isoFromUnixSeconds(detail.create_time)}`,
     `update_time: ${isoFromUnixSeconds(detail.update_time)}`,
     `fetched_at: ${fetchedAt.toISOString()}`,
+    ...(detail.gizmo_id ? [`project_id: ${detail.gizmo_id}`] : []),
     "---",
     "",
   ];
