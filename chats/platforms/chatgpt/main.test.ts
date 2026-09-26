@@ -60,4 +60,19 @@ describe("toMarkdown", () => {
     expect(markdown).toContain("## user (2023-11-14T22:13:30.000Z)");
     expect(markdown).toContain("## assistant (2023-11-14T22:14:20.000Z)");
   });
+
+  test("replaces a substantial citation placeholder with its Markdown link", async () => {
+    const detail = await loadFixture();
+    const markdown = toMarkdown("conv-123", detail);
+    expect(markdown).toContain(
+      "Fried rice is a great option.([Example](https://example.com/fried-rice))",
+    );
+    expect(markdown).not.toContain("citeturn1search0");
+  });
+
+  test("leaves a single-space sources-footnote placeholder untouched", async () => {
+    const detail = await loadFixture();
+    const markdown = toMarkdown("conv-123", detail);
+    expect(markdown).toContain("Some people also swap in cauliflower rice.");
+  });
 });

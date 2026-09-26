@@ -12,13 +12,21 @@ interface ConversationSummary {
   update_time: string;
 }
 
+interface ContentReference {
+  matched_text: string;
+  alt?: string;
+}
+
 interface ConversationNode {
   id: string;
   message: {
     author: { role: string };
     create_time: number | null;
     content: { content_type: string; parts?: unknown[] };
-    metadata?: { is_visually_hidden_from_conversation?: boolean };
+    metadata?: {
+      is_visually_hidden_from_conversation?: boolean;
+      content_references?: ContentReference[];
+    };
   } | null;
   parent: string | null;
   children: string[];
@@ -272,12 +280,34 @@ export function activeMessagePath(
   return path.reverse();
 }
 
+/**
+ * Replaces inline citation placeholders (e.g. `citeturn199664search7...`) with
+ * their Markdown link. Only handles "substantial" placeholders (matched_text
+ * longer than a single character) — ChatGPT also emits single-space
+ * placeholders marking an unrelated "sources" footer, which have nothing to
+ * usefully inline and are left as-is.
+ */
+function applyContentReferences(
+  text: string,
+  refs: ContentReference[],
+): string {
+  let result = text;
+  for (const ref of refs) {
+    if (ref.matched_text.length > 1 && ref.alt) {
+      result = result.replaceAll(ref.matched_text, ref.alt);
+    }
+  }
+  return result;
+}
+
 function messageText(
   message: NonNullable<ConversationNode["message"]>,
 ): string {
   if (message.content.content_type !== "text") return "";
+  const refs = message.metadata?.content_references;
   return (message.content.parts ?? [])
     .filter((p): p is string => typeof p === "string")
+    .map((part) => (refs ? applyContentReferences(part, refs) : part))
     .join("\n");
 }
 

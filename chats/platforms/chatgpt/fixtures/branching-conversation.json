@@ -22,9 +22,20 @@
         "author": { "role": "assistant" },
         "content": {
           "content_type": "text",
-          "parts": ["Fried rice is a great option."]
+          "parts": [
+            "Fried rice is a great option.citeturn1search0 Some people also swap in cauliflower rice. "
+          ]
         },
-        "create_time": 1700000060
+        "create_time": 1700000060,
+        "metadata": {
+          "content_references": [
+            {
+              "alt": "([Example](https://example.com/fried-rice))",
+              "matched_text": "citeturn1search0"
+            },
+            { "alt": "", "matched_text": " " }
+          ]
+        }
       },
       "parent": "msg-1"
     },
